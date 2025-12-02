@@ -32,7 +32,7 @@ MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправьте zip арх
 
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
-MSG_SUCCESS = "✅ Архив обновлен! Версия увеличена на 1."
+MSG_SUCCESS = "✅ Архив обновлен!\n\nТекущая версия: {}\nТекущий билд: {}"
 
 MSG_ERROR_PREFIX = "❌ Произошла ошибка при обработке архива:\n"
 MSG_ERROR_SUFFIX = (
@@ -90,26 +90,32 @@ def increment_build_number(build_str):
 
 
 def update_project_file(project_path):
-    """Обновляет версию в project.pbxproj файле"""
+    """Обновляет версию в project.pbxproj файле. Возвращает (успех, marketing_version, build_version)"""
     try:
         with open(project_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
         original_content = content
+        new_marketing_version = None
+        new_build_version = None
         
         # Обновляем MARKETING_VERSION (например, MARKETING_VERSION = 1.0;)
         marketing_pattern = r'(MARKETING_VERSION\s*=\s*)([^;]+)(;)'
         def replace_marketing(match):
+            nonlocal new_marketing_version
             version = match.group(2).strip().strip('"')
             new_version = increment_version(version)
+            new_marketing_version = new_version
             return f'{match.group(1)}{new_version}{match.group(3)}'
         content = re.sub(marketing_pattern, replace_marketing, content)
         
         # Обновляем CURRENT_PROJECT_VERSION (например, CURRENT_PROJECT_VERSION = 1;)
         build_pattern = r'(CURRENT_PROJECT_VERSION\s*=\s*)([^;]+)(;)'
         def replace_build(match):
+            nonlocal new_build_version
             build = match.group(2).strip().strip('"')
             new_build = increment_build_number(build)
+            new_build_version = new_build
             return f'{match.group(1)}{new_build}{match.group(3)}'
         content = re.sub(build_pattern, replace_build, content)
         
@@ -117,15 +123,16 @@ def update_project_file(project_path):
             with open(project_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             logger.info(LOG_FILE_UPDATED.format(project_path))
-            return True
-        return False
+            return (True, new_marketing_version, new_build_version)
+        return (False, None, None)
     except Exception as e:
         logger.error(LOG_FILE_UPDATE_ERROR.format(project_path, e))
-        return False
+        return (False, None, None)
 
 
 def process_archive(archive_path, output_path):
-    """Обрабатывает архив: распаковывает, обновляет версии, запаковывает обратно"""
+    """Обрабатывает архив: распаковывает, обновляет версии, запаковывает обратно.
+    Возвращает (успех, marketing_version, build_version)"""
     temp_dir = tempfile.mkdtemp()
     try:
         # Распаковываем архив
@@ -139,9 +146,17 @@ def process_archive(archive_path, output_path):
             raise ValueError(ERROR_NO_PBXPROJ_FILES)
         
         updated_count = 0
+        marketing_version = None
+        build_version = None
+        
         for project_file in project_files:
-            if update_project_file(str(project_file)):
+            success, m_version, b_version = update_project_file(str(project_file))
+            if success:
                 updated_count += 1
+                # Сохраняем версии из первого успешно обновленного файла
+                if marketing_version is None:
+                    marketing_version = m_version
+                    build_version = b_version
         
         if updated_count == 0:
             raise ValueError(ERROR_NO_FILES_UPDATED)
@@ -155,7 +170,7 @@ def process_archive(archive_path, output_path):
                     zip_out.write(file_path, arc_name)
         
         logger.info(LOG_FILES_PROCESSED.format(updated_count))
-        return True
+        return (True, marketing_version, build_version)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -187,7 +202,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(LOG_FILE_UPLOADED.format(document.file_name))
             
             # Обрабатываем архив
-            process_archive(temp_input.name, temp_output.name)
+            success, marketing_version, build_version = process_archive(temp_input.name, temp_output.name)
+            
+            if not success:
+                raise ValueError("Не удалось обработать архив")
+            
+            # Формируем сообщение с версиями
+            success_message = MSG_SUCCESS.format(
+                marketing_version or "неизвестно",
+                build_version or "неизвестно"
+            )
             
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
@@ -195,7 +219,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=open(temp_output.name, 'rb'),
                 filename=output_filename,
-                caption=MSG_SUCCESS
+                caption=success_message
             )
             logger.info(LOG_FILE_SENT.format(output_filename))
             
