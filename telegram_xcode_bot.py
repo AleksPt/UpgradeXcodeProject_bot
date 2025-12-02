@@ -40,9 +40,7 @@ MSG_SUCCESS_NAME = "✅ Название приложения изменено!\
 
 MSG_ALREADY_PROCESSED = "⚠️ Этот архив уже был обработан."
 
-MSG_WAITING_NAME = "✏️ Введи новое название приложения:\n\n(Максимум 30 символов)"
-
-MSG_NAME_TOO_LONG = "❌ Название слишком длинное. Максимум 30 символов. Попробуй еще раз."
+MSG_WAITING_NAME = "✏️ Введи новое название приложения:"
 
 MSG_NAME_CHANGED = "✅ Название успешно изменено на: {}"
 
@@ -545,13 +543,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Получаем новое название
     new_name = update.message.text.strip()
-    
-    # Проверяем длину названия
-    if len(new_name) > 30:
-        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(MSG_NAME_TOO_LONG, reply_markup=reply_markup)
-        return
     
     if not new_name:
         keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
