@@ -30,11 +30,11 @@ MSG_START_GREETING = (
 
 MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправьте zip архив с проектом Xcode."
 
-MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nНажмите кнопку ниже, чтобы увеличить версию и билд на 1."
+MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nНажмите кнопку ниже, чтобы увеличить версию и билд на 1."
 
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
-MSG_SUCCESS = "✅ Архив обновлен!\n\nТекущая версия: {}\nТекущий билд: {}"
+MSG_SUCCESS = "✅ Архив обновлен!\n\nНовая версия: {}\nНовый билд: {}"
 
 MSG_ALREADY_PROCESSED = "⚠️ Этот архив уже был обработан."
 
@@ -98,6 +98,32 @@ def increment_build_number(build_str):
         return str(build_num + 1)
     except ValueError:
         return build_str
+
+
+def read_project_versions(project_path):
+    """Читает текущие версию и билд из project.pbxproj файла без изменения.
+    Возвращает (marketing_version, build_version)"""
+    try:
+        with open(project_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        marketing_version = None
+        build_version = None
+        
+        # Ищем MARKETING_VERSION (например, MARKETING_VERSION = 1.0;)
+        marketing_match = re.search(r'MARKETING_VERSION\s*=\s*([^;]+);', content)
+        if marketing_match:
+            marketing_version = marketing_match.group(1).strip().strip('"')
+        
+        # Ищем CURRENT_PROJECT_VERSION (например, CURRENT_PROJECT_VERSION = 1;)
+        build_match = re.search(r'CURRENT_PROJECT_VERSION\s*=\s*([^;]+);', content)
+        if build_match:
+            build_version = build_match.group(1).strip().strip('"')
+        
+        return (marketing_version, build_version)
+    except Exception as e:
+        logger.error(f"Ошибка при чтении версий из {project_path}: {e}")
+        return (None, None)
 
 
 def update_project_file(project_path):
@@ -213,12 +239,39 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(LOG_FILE_UPLOADED.format(document.file_name))
         
+        # Читаем текущие версии из архива
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Распаковываем архив временно для чтения версий
+            with zipfile.ZipFile(temp_input.name, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # Ищем первый project.pbxproj файл
+            project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+            
+            marketing_version = "неизвестно"
+            build_version = "неизвестно"
+            
+            if project_files:
+                # Читаем версии из первого найденного файла
+                m_version, b_version = read_project_versions(str(project_files[0]))
+                if m_version:
+                    marketing_version = m_version
+                if b_version:
+                    build_version = b_version
+        finally:
+            # Удаляем временную директорию
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        
         # Создаем кнопку подтверждения
         keyboard = [[InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Формируем сообщение с текущими версиями
+        archive_message = MSG_ARCHIVE_RECEIVED.format(marketing_version, build_version)
+        
         await update.message.reply_text(
-            MSG_ARCHIVE_RECEIVED,
+            archive_message,
             reply_markup=reply_markup
         )
         
