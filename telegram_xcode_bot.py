@@ -4,8 +4,8 @@ import zipfile
 import tempfile
 import shutil
 from pathlib import Path
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import logging
 
 logging.basicConfig(
@@ -30,9 +30,20 @@ MSG_START_GREETING = (
 
 MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправьте zip архив с проектом Xcode."
 
+MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nНажмите кнопку ниже, чтобы увеличить версию и билд на 1."
+
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
 MSG_SUCCESS = "✅ Архив обновлен!\n\nТекущая версия: {}\nТекущий билд: {}"
+
+MSG_ALREADY_PROCESSED = "⚠️ Этот архив уже был обработан."
+
+MSG_WRONG_USER = "❌ Вы не можете обработать чужой архив."
+
+MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, отправьте архив заново."
+
+# Тексты кнопок
+BUTTON_PROCESS_ARCHIVE = "🆙 Увеличить версию и билд"
 
 MSG_ERROR_PREFIX = "❌ Произошла ошибка при обработке архива:\n"
 MSG_ERROR_SUFFIX = (
@@ -181,7 +192,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик документов (архивов)"""
+    """Обработчик документов (архивов) - сохраняет файл и показывает кнопку"""
     document = update.message.document
     
     # Проверяем, что это архив
@@ -189,23 +200,74 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(MSG_WRONG_FILE_FORMAT)
         return
     
-    await update.message.reply_text(MSG_PROCESSING)
-    
     try:
-        # Скачиваем файл
+        # Скачиваем файл во временное хранилище
         file = await context.bot.get_file(document.file_id)
         temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        await file.download_to_drive(temp_input.name)
+        
+        # Сохраняем путь к файлу в user_data для последующей обработки
+        user_id = update.effective_user.id
+        context.user_data[f'archive_{user_id}'] = temp_input.name
+        context.user_data[f'file_name_{user_id}'] = document.file_name
+        
+        logger.info(LOG_FILE_UPLOADED.format(document.file_name))
+        
+        # Создаем кнопку подтверждения
+        keyboard = [[InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            MSG_ARCHIVE_RECEIVED,
+            reply_markup=reply_markup
+        )
+        
+    except Exception as e:
+        logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
+        await update.message.reply_text(
+            MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
+        )
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку - обрабатывает архив"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[1])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Проверяем, не был ли уже обработан этот файл
+    if context.user_data.get(f'processed_{user_id}'):
+        await query.edit_message_text(MSG_ALREADY_PROCESSED)
+        return
+    
+    # Обновляем сообщение - показываем процесс обработки
+    await query.edit_message_text(MSG_PROCESSING)
+    
+    try:
         temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
         
         try:
-            await file.download_to_drive(temp_input.name)
-            logger.info(LOG_FILE_UPLOADED.format(document.file_name))
-            
             # Обрабатываем архив
-            success, marketing_version, build_version = process_archive(temp_input.name, temp_output.name)
+            success, marketing_version, build_version = process_archive(archive_path, temp_output.name)
             
             if not success:
                 raise ValueError("Не удалось обработать архив")
+            
+            # Помечаем файл как обработанный
+            context.user_data[f'processed_{user_id}'] = True
             
             # Формируем сообщение с версиями
             success_message = MSG_SUCCESS.format(
@@ -216,23 +278,36 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
             
-            await update.message.reply_document(
+            await query.message.reply_document(
                 document=open(temp_output.name, 'rb'),
                 filename=output_filename,
                 caption=success_message
             )
             logger.info(LOG_FILE_SENT.format(output_filename))
             
-        finally:
             # Удаляем временные файлы
-            if os.path.exists(temp_input.name):
-                os.unlink(temp_input.name)
+            if os.path.exists(archive_path):
+                os.unlink(archive_path)
+            if os.path.exists(temp_output.name):
+                os.unlink(temp_output.name)
+            
+            # Очищаем user_data
+            context.user_data.pop(f'archive_{user_id}', None)
+            context.user_data.pop(f'file_name_{user_id}', None)
+            context.user_data.pop(f'processed_{user_id}', None)
+            
+        except Exception as e:
+            logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
+            await query.edit_message_text(
+                MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
+            )
+            # Удаляем временные файлы при ошибке
             if os.path.exists(temp_output.name):
                 os.unlink(temp_output.name)
                 
     except Exception as e:
         logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
-        await update.message.reply_text(
+        await query.edit_message_text(
             MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
         )
 
@@ -244,6 +319,8 @@ def main():
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    # Обработчик нажатий на кнопки (callback_data начинается с "process_")
+    application.add_handler(CallbackQueryHandler(button_callback, pattern="^process_"))
     
     # Запускаем бота
     logger.info(LOG_BOT_STARTED)
