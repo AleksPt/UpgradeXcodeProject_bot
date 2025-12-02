@@ -24,31 +24,41 @@ logger = logging.getLogger(__name__)
 # Сообщения для пользователя
 MSG_START_GREETING = (
     "Привет! 👋\n\n"
-    "Отправьте мне архив с проектом Xcode (zip файл), "
-    "и я увеличу версию и билд на 1, а затем верну обновленный архив."
+    "Я могу увеличить версию + билд в проекте Xcode и изменить название приложения.\n"
+    "Пришли мне архив с проектом (zip файл)."
 )
 
-MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправьте zip архив с проектом Xcode."
+MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправь zip архив с проектом Xcode."
 
-MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nНажмите кнопку ниже, чтобы увеличить версию и билд на 1."
+MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nВыбери действие:"
 
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
 MSG_SUCCESS = "✅ Архив обновлен!\n\nНовая версия: {}\nНовый билд: {}"
 
+MSG_SUCCESS_NAME = "✅ Название приложения изменено!\n\nНовое название: {}"
+
 MSG_ALREADY_PROCESSED = "⚠️ Этот архив уже был обработан."
 
-MSG_WRONG_USER = "❌ Вы не можете обработать чужой архив."
+MSG_WAITING_NAME = "✏️ Введи новое название приложения:\n\n(Максимум 30 символов)"
 
-MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, отправьте архив заново."
+MSG_NAME_TOO_LONG = "❌ Название слишком длинное. Максимум 30 символов. Попробуй еще раз."
+
+MSG_NAME_CHANGED = "✅ Название успешно изменено на: {}"
+
+MSG_WRONG_USER = "❌ Ты не можешь обработать чужой архив."
+
+MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, отправь архив заново."
 
 # Тексты кнопок
 BUTTON_PROCESS_ARCHIVE = "🆙 Увеличить версию и билд"
+BUTTON_CHANGE_NAME = "✏️ Изменить название"
+BUTTON_BACK = "⬅️ Назад"
 
 MSG_ERROR_PREFIX = "❌ Произошла ошибка при обработке архива:\n"
 MSG_ERROR_SUFFIX = (
     "\n\n"
-    "Убедитесь, что архив содержит проект Xcode с файлами project.pbxproj"
+    "Убедись, что архив содержит проект Xcode с файлами project.pbxproj"
 )
 
 # Сообщения об ошибках
@@ -124,6 +134,73 @@ def read_project_versions(project_path):
     except Exception as e:
         logger.error(f"Ошибка при чтении версий из {project_path}: {e}")
         return (None, None)
+
+
+def update_display_name(project_path, new_name):
+    """Обновляет Display Name в project.pbxproj файле.
+    Возвращает True если успешно обновлено"""
+    try:
+        with open(project_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        original_content = content
+        
+        # Обновляем INFOPLIST_KEY_CFBundleDisplayName (например, INFOPLIST_KEY_CFBundleDisplayName = "Old Name";)
+        # Экранируем кавычки в новом имени
+        escaped_name = new_name.replace('"', '\\"')
+        display_name_pattern = r'(INFOPLIST_KEY_CFBundleDisplayName\s*=\s*)([^;]+)(;)'
+        
+        def replace_display_name(match):
+            return f'{match.group(1)}"{escaped_name}"{match.group(3)}'
+        
+        content = re.sub(display_name_pattern, replace_display_name, content)
+        
+        if content != original_content:
+            with open(project_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info(f"Обновлено название в файле: {project_path}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении названия в {project_path}: {e}")
+        return False
+
+
+def process_archive_change_name(archive_path, output_path, new_name):
+    """Обрабатывает архив: распаковывает, изменяет название, запаковывает обратно.
+    Возвращает (успех, новое_название)"""
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Распаковываем архив
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Ищем все project.pbxproj файлы
+        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+        
+        if not project_files:
+            raise ValueError(ERROR_NO_PBXPROJ_FILES)
+        
+        updated_count = 0
+        for project_file in project_files:
+            if update_display_name(str(project_file), new_name):
+                updated_count += 1
+        
+        if updated_count == 0:
+            raise ValueError("Не удалось обновить название ни в одном файле project.pbxproj")
+        
+        # Создаем новый архив
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arc_name = os.path.relpath(file_path, temp_dir)
+                    zip_out.write(file_path, arc_name)
+        
+        logger.info(f"Обработано файлов project.pbxproj для изменения названия: {updated_count}")
+        return (True, new_name)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def update_project_file(project_path):
@@ -263,8 +340,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Удаляем временную директорию
             shutil.rmtree(temp_dir, ignore_errors=True)
         
-        # Создаем кнопку подтверждения
-        keyboard = [[InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")]]
+        # Создаем кнопки действий
+        keyboard = [
+            [InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")],
+            [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         # Формируем сообщение с текущими версиями
@@ -365,6 +445,167 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def change_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Изменить название'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Устанавливаем состояние ожидания ввода названия
+    context.user_data[f'waiting_name_{user_id}'] = True
+    
+    # Создаем кнопку "Назад"
+    keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(MSG_WAITING_NAME, reply_markup=reply_markup)
+
+
+async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Назад'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[1])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Убираем состояние ожидания ввода
+    context.user_data.pop(f'waiting_name_{user_id}', None)
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Читаем текущие версии для отображения
+    temp_dir = tempfile.mkdtemp()
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+        
+        marketing_version = "неизвестно"
+        build_version = "неизвестно"
+        
+        if project_files:
+            m_version, b_version = read_project_versions(str(project_files[0]))
+            if m_version:
+                marketing_version = m_version
+            if b_version:
+                build_version = b_version
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    # Восстанавливаем кнопки действий
+    keyboard = [
+        [InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    archive_message = MSG_ARCHIVE_RECEIVED.format(marketing_version, build_version)
+    await query.edit_message_text(archive_message, reply_markup=reply_markup)
+
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик текстовых сообщений - для ввода нового названия"""
+    user_id = update.effective_user.id
+    
+    # Проверяем, ждет ли бот ввода названия
+    if not context.user_data.get(f'waiting_name_{user_id}'):
+        # Если не ждет ввода, игнорируем сообщение
+        return
+    
+    # Проверяем наличие файла
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await update.message.reply_text(MSG_FILE_NOT_FOUND)
+        context.user_data.pop(f'waiting_name_{user_id}', None)
+        return
+    
+    # Получаем новое название
+    new_name = update.message.text.strip()
+    
+    # Проверяем длину названия
+    if len(new_name) > 30:
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(MSG_NAME_TOO_LONG, reply_markup=reply_markup)
+        return
+    
+    if not new_name:
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("❌ Название не может быть пустым. Попробуйте еще раз.", reply_markup=reply_markup)
+        return
+    
+    # Убираем состояние ожидания
+    context.user_data.pop(f'waiting_name_{user_id}', None)
+    
+    await update.message.reply_text(MSG_PROCESSING)
+    
+    try:
+        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        
+        try:
+            # Обрабатываем архив с изменением названия
+            success, changed_name = process_archive_change_name(archive_path, temp_output.name, new_name)
+            
+            if not success:
+                raise ValueError("Не удалось изменить название")
+            
+            # Формируем сообщение
+            success_message = MSG_SUCCESS_NAME.format(changed_name)
+            
+            # Отправляем обратно с фиксированным именем
+            output_filename = "source.zip"
+            
+            await update.message.reply_document(
+                document=open(temp_output.name, 'rb'),
+                filename=output_filename,
+                caption=success_message
+            )
+            logger.info(f"Отправлен файл с измененным названием: {output_filename}")
+            
+            # Удаляем временные файлы
+            if os.path.exists(temp_output.name):
+                os.unlink(temp_output.name)
+            
+        except Exception as e:
+            logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
+            await update.message.reply_text(
+                MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
+            )
+            if os.path.exists(temp_output.name):
+                os.unlink(temp_output.name)
+                
+    except Exception as e:
+        logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
+        await update.message.reply_text(
+            MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
+        )
+
+
 def main():
     """Запуск бота"""
     application = Application.builder().token(BOT_TOKEN).build()
@@ -372,8 +613,12 @@ def main():
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    # Обработчик нажатий на кнопки (callback_data начинается с "process_")
+    # Обработчик текстовых сообщений (для ввода названия) - должен быть перед другими MessageHandler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    # Обработчик нажатий на кнопки
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^process_"))
+    application.add_handler(CallbackQueryHandler(change_name_callback, pattern="^change_name_"))
+    application.add_handler(CallbackQueryHandler(back_callback, pattern="^back_"))
     
     # Запускаем бота
     logger.info(LOG_BOT_STARTED)
