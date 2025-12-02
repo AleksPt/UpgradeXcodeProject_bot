@@ -17,12 +17,56 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# КОНСТАНТЫ - ТЕКСТОВЫЕ СООБЩЕНИЯ
+# ============================================================================
+
+# Сообщения для пользователя
+MSG_START_GREETING = (
+    "Привет! 👋\n\n"
+    "Отправьте мне архив с проектом Xcode (zip файл), "
+    "и я увеличу версию на 1, затем верну обновленный архив.\n\n"
+    "Что обновляется:\n"
+    "• MARKETING_VERSION увеличивается на 1 (1.0 → 2.0)\n"
+    "• CURRENT_PROJECT_VERSION увеличивается на 1 (1 → 2)"
+)
+
+MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправьте zip архив с проектом Xcode."
+
+MSG_PROCESSING = "⏳ Обрабатываю архив..."
+
+MSG_SUCCESS = "✅ Архив обновлен! Версия увеличена на 1."
+
+MSG_ERROR_PREFIX = "❌ Произошла ошибка при обработке архива:\n"
+MSG_ERROR_SUFFIX = (
+    "\n\n"
+    "Убедитесь, что архив содержит проект Xcode с файлами project.pbxproj"
+)
+
+# Сообщения об ошибках
+ERROR_NO_PBXPROJ_FILES = "Не найдено файлов project.pbxproj в архиве"
+ERROR_NO_FILES_UPDATED = "Не удалось обновить ни один файл project.pbxproj"
+
+# Сообщения в логах
+LOG_BOT_TOKEN_MISSING = "BOT_TOKEN не установлен! Установите переменную окружения BOT_TOKEN в Railway."
+LOG_FILE_UPLOADED = "Загружен файл: {}"
+LOG_FILE_UPDATED = "Обновлен файл: {}"
+LOG_FILE_UPDATE_ERROR = "Ошибка при обновлении {}: {}"
+LOG_FILES_PROCESSED = "Обработано файлов project.pbxproj: {}"
+LOG_FILE_SENT = "Отправлен обновленный файл: {}"
+LOG_ARCHIVE_ERROR = "Ошибка при обработке архива: {}"
+LOG_BOT_STARTED = "Бот запущен..."
+
+# ============================================================================
+# КОНФИГУРАЦИЯ
+# ============================================================================
+
 # Токен бота из переменной окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
-    logger.error("BOT_TOKEN не установлен! Установите переменную окружения BOT_TOKEN в Railway.")
-    raise ValueError("BOT_TOKEN не установлен")
+    logger.error(LOG_BOT_TOKEN_MISSING)
+    raise ValueError(LOG_BOT_TOKEN_MISSING)
 
 
 def increment_version(version_str):
@@ -75,11 +119,11 @@ def update_project_file(project_path):
         if content != original_content:
             with open(project_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            logger.info(f"Обновлен файл: {project_path}")
+            logger.info(LOG_FILE_UPDATED.format(project_path))
             return True
         return False
     except Exception as e:
-        logger.error(f"Ошибка при обновлении {project_path}: {e}")
+        logger.error(LOG_FILE_UPDATE_ERROR.format(project_path, e))
         return False
 
 
@@ -95,7 +139,7 @@ def process_archive(archive_path, output_path):
         project_files = list(Path(temp_dir).rglob('project.pbxproj'))
         
         if not project_files:
-            raise ValueError("Не найдено файлов project.pbxproj в архиве")
+            raise ValueError(ERROR_NO_PBXPROJ_FILES)
         
         updated_count = 0
         for project_file in project_files:
@@ -103,7 +147,7 @@ def process_archive(archive_path, output_path):
                 updated_count += 1
         
         if updated_count == 0:
-            raise ValueError("Не удалось обновить ни один файл project.pbxproj")
+            raise ValueError(ERROR_NO_FILES_UPDATED)
         
         # Создаем новый архив
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
@@ -113,7 +157,7 @@ def process_archive(archive_path, output_path):
                     arc_name = os.path.relpath(file_path, temp_dir)
                     zip_out.write(file_path, arc_name)
         
-        logger.info(f"Обработано файлов project.pbxproj: {updated_count}")
+        logger.info(LOG_FILES_PROCESSED.format(updated_count))
         return True
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -121,11 +165,7 @@ def process_archive(archive_path, output_path):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    await update.message.reply_text(
-        "Привет! 👋\n\n"
-        "Отправьте мне архив с проектом Xcode (zip файл)."
-        "Я увеличу версию и номер билда на 1, а затем верну обновленный архив."
-    )
+    await update.message.reply_text(MSG_START_GREETING)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,10 +174,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Проверяем, что это архив
     if not document.file_name or not document.file_name.lower().endswith(('.zip', '.zipx')):
-        await update.message.reply_text("❌ Пожалуйста, отправьте zip архив с проектом Xcode.")
+        await update.message.reply_text(MSG_WRONG_FILE_FORMAT)
         return
     
-    await update.message.reply_text("⏳ Обрабатываю архив...")
+    await update.message.reply_text(MSG_PROCESSING)
     
     try:
         # Скачиваем файл
@@ -147,7 +187,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             await file.download_to_drive(temp_input.name)
-            logger.info(f"Загружен файл: {document.file_name}")
+            logger.info(LOG_FILE_UPLOADED.format(document.file_name))
             
             # Обрабатываем архив
             process_archive(temp_input.name, temp_output.name)
@@ -160,9 +200,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=open(temp_output.name, 'rb'),
                 filename=output_filename,
-                caption="✅ Архив обновлен! Версия и билд увеличены на 1."
+                caption=MSG_SUCCESS
             )
-            logger.info(f"Отправлен обновленный файл: {output_filename}")
+            logger.info(LOG_FILE_SENT.format(output_filename))
             
         finally:
             # Удаляем временные файлы
@@ -172,10 +212,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 os.unlink(temp_output.name)
                 
     except Exception as e:
-        logger.error(f"Ошибка при обработке архива: {e}", exc_info=True)
+        logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
         await update.message.reply_text(
-            f"❌ Произошла ошибка при обработке архива:\n{str(e)}\n\n"
-            "Убедитесь, что архив содержит проект Xcode с файлами project.pbxproj"
+            MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
         )
 
 
@@ -188,7 +227,7 @@ def main():
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
     # Запускаем бота
-    logger.info("Бот запущен...")
+    logger.info(LOG_BOT_STARTED)
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
