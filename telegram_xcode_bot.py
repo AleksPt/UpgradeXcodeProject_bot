@@ -189,10 +189,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Обрабатываем архив
             process_archive(temp_input.name, temp_output.name)
             
-            # Отправляем обратно
-            output_filename = document.file_name.replace('.zip', '_updated.zip').replace('.ZIP', '_updated.zip')
-            if not output_filename.lower().endswith('.zip'):
-                output_filename += '.zip'
+            # Отправляем обратно с фиксированным именем
+            output_filename = "source.zip"
             
             await update.message.reply_document(
                 document=open(temp_output.name, 'rb'),
