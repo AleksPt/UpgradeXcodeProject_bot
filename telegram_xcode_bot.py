@@ -180,9 +180,16 @@ def process_archive_change_name(archive_path, output_path, new_name):
             raise ValueError(ERROR_NO_PBXPROJ_FILES)
         
         updated_count = 0
+        marketing_version = None
+        build_version = None
         for project_file in project_files:
             if update_display_name(str(project_file), new_name):
                 updated_count += 1
+            # Also update version and build
+            success, m_version, b_version = update_project_file(str(project_file))
+            if success:
+                marketing_version = m_version
+                build_version = b_version
         
         if updated_count == 0:
             raise ValueError("Не удалось обновить название ни в одном файле project.pbxproj")
@@ -196,7 +203,7 @@ def process_archive_change_name(archive_path, output_path, new_name):
                     zip_out.write(file_path, arc_name)
         
         logger.info(f"Обработано файлов project.pbxproj для изменения названия: {updated_count}")
-        return (True, new_name)
+        return (True, new_name, marketing_version, build_version)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -560,13 +567,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         try:
             # Обрабатываем архив с изменением названия
-            success, changed_name = process_archive_change_name(archive_path, temp_output.name, new_name)
+            success, changed_name, marketing_version, build_version = process_archive_change_name(archive_path, temp_output.name, new_name)
             
             if not success:
                 raise ValueError("Не удалось изменить название")
             
             # Формируем сообщение
-            success_message = MSG_SUCCESS_NAME.format(changed_name)
+            success_message = MSG_SUCCESS.format(
+                marketing_version or "неизвестно",
+                build_version or "неизвестно"
+            ) + f"\nНовое название: {changed_name}"
             
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
