@@ -7,6 +7,7 @@ from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import logging
+from PIL import Image
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,6 +40,7 @@ MSG_ACTION_ADDED = "✅ Действие добавлено!\n\n{}\n\nВыбер
 MSG_VERSION_WILL_INCREMENT = "🆙 Версия и билд будут увеличены"
 MSG_NAME_WILL_CHANGE = "✏️ Название изменится на: {}"
 MSG_BUNDLE_ID_WILL_CHANGE = "📦 Bundle ID изменится на: {}"
+MSG_ICON_WILL_CHANGE = "🎨 Иконка будет изменена"
 
 MSG_WAITING_NAME = "✏️ Введи новое название приложения:"
 
@@ -51,6 +53,29 @@ MSG_WAITING_BUNDLE_ID = (
     "• Первый символ должен быть буквой\n"
     "• Без пробелов\n\n"
     "Пример: com.example.myapp"
+)
+
+MSG_WAITING_ICON = (
+    "🎨 Отправь новую иконку приложения:\n\n"
+    "Требования:\n"
+    "• Формат: JPG\n"
+    "• Размер: 1024x1024 пикселей\n\n"
+    "Отправь файл или изображение."
+)
+
+MSG_ICON_INVALID_FORMAT = (
+    "❌ Неверный формат изображения!\n\n"
+    "Требования:\n"
+    "• Формат: JPG\n"
+    "• Размер: 1024x1024 пикселей\n\n"
+    "Попробуй еще раз."
+)
+
+MSG_ICON_INVALID_SIZE = (
+    "❌ Неверный размер изображения!\n\n"
+    "Текущий размер: {}x{}\n"
+    "Требуемый размер: 1024x1024 пикселей\n\n"
+    "Попробуй еще раз."
 )
 
 MSG_BUNDLE_ID_INVALID = (
@@ -70,6 +95,7 @@ MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, от
 BUTTON_INCREMENT_VERSION = "🆙 Увеличить версию и билд"
 BUTTON_CHANGE_NAME = "✏️ Изменить название"
 BUTTON_CHANGE_BUNDLE_ID = "📦 Сменить Bundle ID"
+BUTTON_CHANGE_ICON = "🎨 Изменить иконку"
 BUTTON_PROJECT_INFO = "ℹ️ Информация о проекте"
 BUTTON_GET_ARCHIVE = "📥 Получить обновлённый архив"
 BUTTON_BACK = "⬅️ Назад"
@@ -121,6 +147,10 @@ def get_pending_actions_summary(user_data, user_id):
     new_bundle_id = user_data.get(f'action_new_bundle_id_{user_id}')
     if new_bundle_id:
         actions.append(MSG_BUNDLE_ID_WILL_CHANGE.format(new_bundle_id))
+    
+    new_icon_path = user_data.get(f'action_new_icon_{user_id}')
+    if new_icon_path:
+        actions.append(MSG_ICON_WILL_CHANGE)
     
     if not actions:
         return "Нет запланированных действий."
@@ -292,6 +322,37 @@ def update_bundle_id(project_path, new_bundle_id):
         return False
 
 
+def replace_app_icon(project_dir, new_icon_path):
+    """Заменяет иконку приложения в проекте.
+    Ищет Assets.xcassets/AppIcon.appiconset и заменяет изображение 1024x1024.
+    Возвращает True если успешно заменено"""
+    try:
+        # Ищем Assets.xcassets/AppIcon.appiconset
+        project_path = Path(project_dir)
+        appiconset_paths = list(project_path.rglob('Assets.xcassets/AppIcon.appiconset'))
+        
+        if not appiconset_paths:
+            logger.warning("Не найдена папка AppIcon.appiconset")
+            return False
+        
+        icon_replaced = False
+        for appiconset_path in appiconset_paths:
+            # Копируем новую иконку как AppIcon-1024.png (стандартное имя для 1024x1024)
+            target_icon = appiconset_path / 'AppIcon-1024.png'
+            
+            # Конвертируем в PNG если нужно
+            img = Image.open(new_icon_path)
+            img.save(str(target_icon), 'PNG')
+            
+            logger.info(f"Заменена иконка в {appiconset_path}")
+            icon_replaced = True
+        
+        return icon_replaced
+    except Exception as e:
+        logger.error(f"Ошибка при замене иконки: {e}")
+        return False
+
+
 
 
 def update_project_file(project_path):
@@ -337,7 +398,7 @@ def update_project_file(project_path):
 
 def process_archive_with_actions(archive_path, output_path, actions):
     """Обрабатывает архив применяя все запланированные действия.
-    actions - словарь с ключами: increment_version, new_name, new_bundle_id
+    actions - словарь с ключами: increment_version, new_name, new_bundle_id, new_icon_path
     Возвращает (успех, marketing_version, build_version, display_name, bundle_id)"""
     temp_dir = tempfile.mkdtemp()
     try:
@@ -374,6 +435,10 @@ def process_archive_with_actions(archive_path, output_path, actions):
             # Меняем Bundle ID если указан
             if actions.get('new_bundle_id'):
                 update_bundle_id(project_path, actions['new_bundle_id'])
+        
+        # Меняем иконку если указана
+        if actions.get('new_icon_path'):
+            replace_app_icon(temp_dir, actions['new_icon_path'])
         
         # Читаем финальную информацию из обработанного файла
         if project_files:
@@ -500,6 +565,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
+            [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
             [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -539,13 +605,15 @@ async def show_actions_menu(query_or_message, context: ContextTypes.DEFAULT_TYPE
         [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
         [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
     ]
     
     # Если есть хотя бы одно действие, добавляем кнопку получения архива
     if (context.user_data.get(f'action_increment_version_{user_id}') or 
         context.user_data.get(f'action_new_name_{user_id}') or 
-        context.user_data.get(f'action_new_bundle_id_{user_id}')):
+        context.user_data.get(f'action_new_bundle_id_{user_id}') or
+        context.user_data.get(f'action_new_icon_{user_id}')):
         keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
         keyboard.append([InlineKeyboardButton(BUTTON_RESET, callback_data=f"reset_{user_id}")])
     
@@ -606,11 +674,12 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     actions = {
         'increment_version': context.user_data.get(f'action_increment_version_{user_id}', False),
         'new_name': context.user_data.get(f'action_new_name_{user_id}'),
-        'new_bundle_id': context.user_data.get(f'action_new_bundle_id_{user_id}')
+        'new_bundle_id': context.user_data.get(f'action_new_bundle_id_{user_id}'),
+        'new_icon_path': context.user_data.get(f'action_new_icon_{user_id}')
     }
     
     # Проверяем, есть ли хоть какие-то действия
-    if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id']]):
+    if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id'], actions['new_icon_path']]):
         await query.answer("Не выбрано ни одного действия!", show_alert=True)
         return
     
@@ -660,6 +729,10 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.pop(f'action_increment_version_{user_id}', None)
             context.user_data.pop(f'action_new_name_{user_id}', None)
             context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
+            # Удаляем временный файл иконки
+            icon_path = context.user_data.pop(f'action_new_icon_{user_id}', None)
+            if icon_path and os.path.exists(icon_path):
+                os.unlink(icon_path)
             
         except Exception as e:
             logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
@@ -752,6 +825,10 @@ async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop(f'action_increment_version_{user_id}', None)
     context.user_data.pop(f'action_new_name_{user_id}', None)
     context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
+    # Удаляем временный файл иконки если есть
+    icon_path = context.user_data.pop(f'action_new_icon_{user_id}', None)
+    if icon_path and os.path.exists(icon_path):
+        os.unlink(icon_path)
     
     # Показываем меню заново
     await show_actions_menu(query, context, user_id, is_query=True)
@@ -815,6 +892,35 @@ async def change_bundle_id_callback(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(MSG_WAITING_BUNDLE_ID, reply_markup=reply_markup)
 
 
+async def change_icon_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Изменить иконку'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Устанавливаем состояние ожидания загрузки иконки
+    context.user_data[f'waiting_icon_{user_id}'] = True
+    
+    # Создаем кнопку "Назад"
+    keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(MSG_WAITING_ICON, reply_markup=reply_markup)
+
+
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатия на кнопку 'Назад'"""
     query = update.callback_query
@@ -831,6 +937,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Убираем состояние ожидания ввода
     context.user_data.pop(f'waiting_name_{user_id}', None)
     context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
+    context.user_data.pop(f'waiting_icon_{user_id}', None)
     
     # Проверяем наличие файла в user_data
     archive_path = context.user_data.get(f'archive_{user_id}')
@@ -916,6 +1023,80 @@ async def handle_bundle_id_input(update: Update, context: ContextTypes.DEFAULT_T
     await show_actions_menu(update.message, context, user_id, is_query=False)
 
 
+async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик фотографий и документов - для загрузки иконки"""
+    user_id = update.effective_user.id
+    
+    # Проверяем, ждет ли бот загрузки иконки
+    if not context.user_data.get(f'waiting_icon_{user_id}'):
+        return
+    
+    # Проверяем наличие архива
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await update.message.reply_text(MSG_FILE_NOT_FOUND)
+        context.user_data.pop(f'waiting_icon_{user_id}', None)
+        return
+    
+    try:
+        # Получаем файл (фото или документ)
+        if update.message.photo:
+            # Берем фото наибольшего размера
+            photo = update.message.photo[-1]
+            file = await context.bot.get_file(photo.file_id)
+        elif update.message.document:
+            file = await context.bot.get_file(update.message.document.file_id)
+        else:
+            return
+        
+        # Скачиваем файл
+        temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+        await file.download_to_drive(temp_image.name)
+        
+        # Проверяем изображение
+        try:
+            img = Image.open(temp_image.name)
+            width, height = img.size
+            img_format = img.format
+            
+            # Проверяем формат
+            if img_format not in ['JPEG', 'JPG']:
+                keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(MSG_ICON_INVALID_FORMAT, reply_markup=reply_markup)
+                os.unlink(temp_image.name)
+                return
+            
+            # Проверяем размер
+            if width != 1024 or height != 1024:
+                keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    MSG_ICON_INVALID_SIZE.format(width, height),
+                    reply_markup=reply_markup
+                )
+                os.unlink(temp_image.name)
+                return
+            
+            # Все проверки пройдены
+            context.user_data.pop(f'waiting_icon_{user_id}', None)
+            context.user_data[f'action_new_icon_{user_id}'] = temp_image.name
+            
+            # Показываем обновленное меню
+            await show_actions_menu(update.message, context, user_id, is_query=False)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при проверке изображения: {e}")
+            keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(MSG_ICON_INVALID_FORMAT, reply_markup=reply_markup)
+            os.unlink(temp_image.name)
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обработке изображения: {e}", exc_info=True)
+        await update.message.reply_text("❌ Ошибка при обработке изображения")
+
+
 def main():
     """Запуск бота"""
     application = Application.builder().token(BOT_TOKEN).build()
@@ -923,12 +1104,15 @@ def main():
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    # Обработчик фото и документов с изображениями (для иконки)
+    application.add_handler(MessageHandler(filters.PHOTO | (filters.Document.IMAGE), handle_photo_or_document))
     # Обработчик текстовых сообщений (для ввода названия или Bundle ID) - должен быть перед другими MessageHandler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     # Обработчик нажатий на кнопки
     application.add_handler(CallbackQueryHandler(increment_version_callback, pattern="^increment_version_"))
     application.add_handler(CallbackQueryHandler(change_name_callback, pattern="^change_name_"))
     application.add_handler(CallbackQueryHandler(change_bundle_id_callback, pattern="^change_bundle_id_"))
+    application.add_handler(CallbackQueryHandler(change_icon_callback, pattern="^change_icon_"))
     application.add_handler(CallbackQueryHandler(project_info_callback, pattern="^project_info_"))
     application.add_handler(CallbackQueryHandler(get_archive_callback, pattern="^get_archive_"))
     application.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
