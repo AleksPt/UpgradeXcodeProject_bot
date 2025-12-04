@@ -30,15 +30,17 @@ MSG_START_GREETING = (
 
 MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправь zip архив с проектом Xcode."
 
-MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nВыбери действие:"
+MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nВыбери действия:"
 
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
 MSG_SUCCESS = "✅ Архив обновлен!\n\nНовая версия: {}\nНовый билд: {}"
 
-MSG_SUCCESS_NAME = "✅ Название приложения изменено!\n\nНовое название: {}"
+MSG_ACTION_ADDED = "✅ Действие добавлено!\n\n{}\n\nВыбери ещё действия или получи обновлённый архив."
 
-MSG_ALREADY_PROCESSED = "⚠️ Этот архив уже был обработан."
+MSG_VERSION_WILL_INCREMENT = "🆙 Версия и билд будут увеличены"
+MSG_NAME_WILL_CHANGE = "✏️ Название изменится на: {}"
+MSG_BUNDLE_ID_WILL_CHANGE = "📦 Bundle ID изменится на: {}"
 
 MSG_WAITING_NAME = "✏️ Введи новое название приложения:"
 
@@ -67,10 +69,12 @@ MSG_WRONG_USER = "❌ Ты не можешь обработать чужой а�
 MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, отправь архив заново."
 
 # Тексты кнопок
-BUTTON_PROCESS_ARCHIVE = "🆙 Увеличить версию и билд"
+BUTTON_INCREMENT_VERSION = "🆙 Увеличить версию и билд"
 BUTTON_CHANGE_NAME = "✏️ Изменить название"
 BUTTON_CHANGE_BUNDLE_ID = "📦 Сменить Bundle ID"
+BUTTON_GET_ARCHIVE = "📥 Получить обновлённый архив"
 BUTTON_BACK = "⬅️ Назад"
+BUTTON_RESET = "🔄 Начать заново"
 
 MSG_ERROR_PREFIX = "❌ Произошла ошибка при обработке архива:\n"
 MSG_ERROR_SUFFIX = (
@@ -102,6 +106,27 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     logger.error(LOG_BOT_TOKEN_MISSING)
     raise ValueError(LOG_BOT_TOKEN_MISSING)
+
+
+def get_pending_actions_summary(user_data, user_id):
+    """Возвращает текст с описанием всех запланированных действий"""
+    actions = []
+    
+    if user_data.get(f'action_increment_version_{user_id}'):
+        actions.append(MSG_VERSION_WILL_INCREMENT)
+    
+    new_name = user_data.get(f'action_new_name_{user_id}')
+    if new_name:
+        actions.append(MSG_NAME_WILL_CHANGE.format(new_name))
+    
+    new_bundle_id = user_data.get(f'action_new_bundle_id_{user_id}')
+    if new_bundle_id:
+        actions.append(MSG_BUNDLE_ID_WILL_CHANGE.format(new_bundle_id))
+    
+    if not actions:
+        return "Нет запланированных действий."
+    
+    return "Запланированные действия:\n" + "\n".join(actions)
 
 
 def validate_bundle_id(bundle_id):
@@ -230,92 +255,6 @@ def update_bundle_id(project_path, new_bundle_id):
         return False
 
 
-def process_archive_change_name(archive_path, output_path, new_name):
-    """Обрабатывает архив: распаковывает, изменяет название, запаковывает обратно.
-    Возвращает (успех, новое_название)"""
-    temp_dir = tempfile.mkdtemp()
-    try:
-        # Распаковываем архив
-        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-        
-        # Ищем все project.pbxproj файлы
-        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
-        
-        if not project_files:
-            raise ValueError(ERROR_NO_PBXPROJ_FILES)
-        
-        updated_count = 0
-        marketing_version = None
-        build_version = None
-        for project_file in project_files:
-            if update_display_name(str(project_file), new_name):
-                updated_count += 1
-            # Also update version and build
-            success, m_version, b_version = update_project_file(str(project_file))
-            if success:
-                marketing_version = m_version
-                build_version = b_version
-        
-        if updated_count == 0:
-            raise ValueError("Не удалось обновить название ни в одном файле project.pbxproj")
-        
-        # Создаем новый архив
-        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arc_name = os.path.relpath(file_path, temp_dir)
-                    zip_out.write(file_path, arc_name)
-        
-        logger.info(f"Обработано файлов project.pbxproj для изменения названия: {updated_count}")
-        return (True, new_name, marketing_version, build_version)
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def process_archive_change_bundle_id(archive_path, output_path, new_bundle_id):
-    """Обрабатывает архив: распаковывает, изменяет Bundle ID, запаковывает обратно.
-    Возвращает (успех, новый_bundle_id, marketing_version, build_version)"""
-    temp_dir = tempfile.mkdtemp()
-    try:
-        # Распаковываем архив
-        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-        
-        # Ищем все project.pbxproj файлы
-        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
-        
-        if not project_files:
-            raise ValueError(ERROR_NO_PBXPROJ_FILES)
-        
-        updated_count = 0
-        marketing_version = None
-        build_version = None
-        for project_file in project_files:
-            if update_bundle_id(str(project_file), new_bundle_id):
-                updated_count += 1
-            # Also update version and build
-            success, m_version, b_version = update_project_file(str(project_file))
-            if success:
-                marketing_version = m_version
-                build_version = b_version
-        
-        if updated_count == 0:
-            raise ValueError("Не удалось обновить Bundle ID ни в одном файле project.pbxproj")
-        
-        # Создаем новый архив
-        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arc_name = os.path.relpath(file_path, temp_dir)
-                    zip_out.write(file_path, arc_name)
-        
-        logger.info(f"Обработано файлов project.pbxproj для изменения Bundle ID: {updated_count}")
-        return (True, new_bundle_id, marketing_version, build_version)
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def update_project_file(project_path):
@@ -357,6 +296,62 @@ def update_project_file(project_path):
     except Exception as e:
         logger.error(LOG_FILE_UPDATE_ERROR.format(project_path, e))
         return (False, None, None)
+
+
+def process_archive_with_actions(archive_path, output_path, actions):
+    """Обрабатывает архив применяя все запланированные действия.
+    actions - словарь с ключами: increment_version, new_name, new_bundle_id
+    Возвращает (успех, marketing_version, build_version)"""
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Распаковываем архив
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Ищем все project.pbxproj файлы
+        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+        
+        if not project_files:
+            raise ValueError(ERROR_NO_PBXPROJ_FILES)
+        
+        marketing_version = None
+        build_version = None
+        
+        # Применяем все действия к каждому файлу
+        for project_file in project_files:
+            project_path = str(project_file)
+            
+            # Увеличиваем версию если нужно
+            if actions.get('increment_version'):
+                success, m_version, b_version = update_project_file(project_path)
+                if success and marketing_version is None:
+                    marketing_version = m_version
+                    build_version = b_version
+            
+            # Меняем название если указано
+            if actions.get('new_name'):
+                update_display_name(project_path, actions['new_name'])
+            
+            # Меняем Bundle ID если указан
+            if actions.get('new_bundle_id'):
+                update_bundle_id(project_path, actions['new_bundle_id'])
+        
+        # Если версия не была обновлена, читаем текущие значения
+        if marketing_version is None and project_files:
+            marketing_version, build_version = read_project_versions(str(project_files[0]))
+        
+        # Создаем новый архив
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arc_name = os.path.relpath(file_path, temp_dir)
+                    zip_out.write(file_path, arc_name)
+        
+        logger.info(f"Обработан архив с действиями: {actions}")
+        return (True, marketing_version, build_version)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def process_archive(archive_path, output_path):
@@ -457,7 +452,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Создаем кнопки действий
         keyboard = [
-            [InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")],
+            [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")]
         ]
@@ -478,13 +473,43 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатия на кнопку - обрабатывает архив"""
+async def show_actions_menu(query_or_message, context: ContextTypes.DEFAULT_TYPE, user_id: int, is_query: bool = True):
+    """Показывает меню с доступными действиями и кнопкой получения архива"""
+    # Получаем сводку запланированных действий
+    actions_summary = get_pending_actions_summary(context.user_data, user_id)
+    
+    # Формируем текст сообщения
+    message_text = f"📦 Архив загружен\n\n{actions_summary}\n\nВыбери действия:"
+    
+    # Создаем кнопки
+    keyboard = [
+        [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")]
+    ]
+    
+    # Если есть хотя бы одно действие, добавляем кнопку получения архива
+    if (context.user_data.get(f'action_increment_version_{user_id}') or 
+        context.user_data.get(f'action_new_name_{user_id}') or 
+        context.user_data.get(f'action_new_bundle_id_{user_id}')):
+        keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
+        keyboard.append([InlineKeyboardButton(BUTTON_RESET, callback_data=f"reset_{user_id}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if is_query:
+        await query_or_message.edit_message_text(message_text, reply_markup=reply_markup)
+    else:
+        await query_or_message.reply_text(message_text, reply_markup=reply_markup)
+
+
+async def increment_version_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Увеличить версию и билд'"""
     query = update.callback_query
     await query.answer()
     
     # Извлекаем user_id из callback_data
-    user_id = int(query.data.split('_')[1])
+    user_id = int(query.data.split('_')[2])
     
     # Проверяем, что это запрос от того же пользователя
     if query.from_user.id != user_id:
@@ -497,9 +522,42 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(MSG_FILE_NOT_FOUND)
         return
     
-    # Проверяем, не был ли уже обработан этот файл
-    if context.user_data.get(f'processed_{user_id}'):
-        await query.edit_message_text(MSG_ALREADY_PROCESSED)
+    # Добавляем действие в список
+    context.user_data[f'action_increment_version_{user_id}'] = True
+    
+    # Показываем обновленное меню
+    await show_actions_menu(query, context, user_id, is_query=True)
+
+
+async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Получить обновлённый архив'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Собираем все действия
+    actions = {
+        'increment_version': context.user_data.get(f'action_increment_version_{user_id}', False),
+        'new_name': context.user_data.get(f'action_new_name_{user_id}'),
+        'new_bundle_id': context.user_data.get(f'action_new_bundle_id_{user_id}')
+    }
+    
+    # Проверяем, есть ли хоть какие-то действия
+    if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id']]):
+        await query.answer("Не выбрано ни одного действия!", show_alert=True)
         return
     
     # Обновляем сообщение - показываем процесс обработки
@@ -509,20 +567,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
         
         try:
-            # Обрабатываем архив
-            success, marketing_version, build_version = process_archive(archive_path, temp_output.name)
+            # Обрабатываем архив со всеми действиями
+            success, marketing_version, build_version = process_archive_with_actions(
+                archive_path, temp_output.name, actions
+            )
             
             if not success:
                 raise ValueError("Не удалось обработать архив")
             
-            # Помечаем файл как обработанный
-            context.user_data[f'processed_{user_id}'] = True
+            # Формируем сообщение с результатами
+            result_parts = []
+            if actions['increment_version']:
+                result_parts.append(f"Версия: {marketing_version or 'неизвестно'}")
+                result_parts.append(f"Билд: {build_version or 'неизвестно'}")
+            if actions['new_name']:
+                result_parts.append(f"Название: {actions['new_name']}")
+            if actions['new_bundle_id']:
+                result_parts.append(f"Bundle ID: {actions['new_bundle_id']}")
             
-            # Формируем сообщение с версиями
-            success_message = MSG_SUCCESS.format(
-                marketing_version or "неизвестно",
-                build_version or "неизвестно"
-            )
+            success_message = "✅ Архив обновлен!\n\n" + "\n".join(result_parts)
             
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
@@ -543,7 +606,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Очищаем user_data
             context.user_data.pop(f'archive_{user_id}', None)
             context.user_data.pop(f'file_name_{user_id}', None)
-            context.user_data.pop(f'processed_{user_id}', None)
+            context.user_data.pop(f'action_increment_version_{user_id}', None)
+            context.user_data.pop(f'action_new_name_{user_id}', None)
+            context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
             
         except Exception as e:
             logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
@@ -559,6 +624,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
         )
+
+
+async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Начать заново' - сбрасывает все действия"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[1])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Сбрасываем все действия
+    context.user_data.pop(f'action_increment_version_{user_id}', None)
+    context.user_data.pop(f'action_new_name_{user_id}', None)
+    context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
+    
+    # Показываем меню заново
+    await show_actions_menu(query, context, user_id, is_query=True)
 
 
 async def change_name_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -642,36 +729,8 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(MSG_FILE_NOT_FOUND)
         return
     
-    # Читаем текущие версии для отображения
-    temp_dir = tempfile.mkdtemp()
-    try:
-        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-        
-        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
-        
-        marketing_version = "неизвестно"
-        build_version = "неизвестно"
-        
-        if project_files:
-            m_version, b_version = read_project_versions(str(project_files[0]))
-            if m_version:
-                marketing_version = m_version
-            if b_version:
-                build_version = b_version
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-    
-    # Восстанавливаем кнопки действий
-    keyboard = [
-        [InlineKeyboardButton(BUTTON_PROCESS_ARCHIVE, callback_data=f"process_{user_id}")],
-        [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
-        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    archive_message = MSG_ARCHIVE_RECEIVED.format(marketing_version, build_version)
-    await query.edit_message_text(archive_message, reply_markup=reply_markup)
+    # Показываем меню действий
+    await show_actions_menu(query, context, user_id, is_query=True)
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -712,51 +771,11 @@ async def handle_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # Убираем состояние ожидания
     context.user_data.pop(f'waiting_name_{user_id}', None)
     
-    await update.message.reply_text(MSG_PROCESSING)
+    # Сохраняем новое название в действия
+    context.user_data[f'action_new_name_{user_id}'] = new_name
     
-    try:
-        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
-        
-        try:
-            # Обрабатываем архив с изменением названия
-            success, changed_name, marketing_version, build_version = process_archive_change_name(archive_path, temp_output.name, new_name)
-            
-            if not success:
-                raise ValueError("Не удалось изменить название")
-            
-            # Формируем сообщение
-            success_message = MSG_SUCCESS.format(
-                marketing_version or "неизвестно",
-                build_version or "неизвестно"
-            ) + f"\nНовое название: {changed_name}"
-            
-            # Отправляем обратно с фиксированным именем
-            output_filename = "source.zip"
-            
-            await update.message.reply_document(
-                document=open(temp_output.name, 'rb'),
-                filename=output_filename,
-                caption=success_message
-            )
-            logger.info(f"Отправлен файл с измененным названием: {output_filename}")
-            
-            # Удаляем временные файлы
-            if os.path.exists(temp_output.name):
-                os.unlink(temp_output.name)
-            
-        except Exception as e:
-            logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
-            await update.message.reply_text(
-                MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
-            )
-            if os.path.exists(temp_output.name):
-                os.unlink(temp_output.name)
-                
-    except Exception as e:
-        logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
-        await update.message.reply_text(
-            MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
-        )
+    # Показываем обновленное меню
+    await show_actions_menu(update.message, context, user_id, is_query=False)
 
 
 async def handle_bundle_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -781,51 +800,11 @@ async def handle_bundle_id_input(update: Update, context: ContextTypes.DEFAULT_T
     # Убираем состояние ожидания
     context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
     
-    await update.message.reply_text(MSG_PROCESSING)
+    # Сохраняем новый Bundle ID в действия
+    context.user_data[f'action_new_bundle_id_{user_id}'] = new_bundle_id
     
-    try:
-        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
-        
-        try:
-            # Обрабатываем архив с изменением Bundle ID
-            success, changed_bundle_id, marketing_version, build_version = process_archive_change_bundle_id(archive_path, temp_output.name, new_bundle_id)
-            
-            if not success:
-                raise ValueError("Не удалось изменить Bundle ID")
-            
-            # Формируем сообщение
-            success_message = MSG_SUCCESS.format(
-                marketing_version or "неизвестно",
-                build_version or "неизвестно"
-            ) + f"\nНовый Bundle ID: {changed_bundle_id}"
-            
-            # Отправляем обратно с фиксированным именем
-            output_filename = "source.zip"
-            
-            await update.message.reply_document(
-                document=open(temp_output.name, 'rb'),
-                filename=output_filename,
-                caption=success_message
-            )
-            logger.info(f"Отправлен файл с измененным Bundle ID: {output_filename}")
-            
-            # Удаляем временные файлы
-            if os.path.exists(temp_output.name):
-                os.unlink(temp_output.name)
-            
-        except Exception as e:
-            logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
-            await update.message.reply_text(
-                MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
-            )
-            if os.path.exists(temp_output.name):
-                os.unlink(temp_output.name)
-                
-    except Exception as e:
-        logger.error(LOG_ARCHIVE_ERROR.format(e), exc_info=True)
-        await update.message.reply_text(
-            MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
-        )
+    # Показываем обновленное меню
+    await show_actions_menu(update.message, context, user_id, is_query=False)
 
 
 def main():
@@ -838,9 +817,11 @@ def main():
     # Обработчик текстовых сообщений (для ввода названия или Bundle ID) - должен быть перед другими MessageHandler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     # Обработчик нажатий на кнопки
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="^process_"))
+    application.add_handler(CallbackQueryHandler(increment_version_callback, pattern="^increment_version_"))
     application.add_handler(CallbackQueryHandler(change_name_callback, pattern="^change_name_"))
     application.add_handler(CallbackQueryHandler(change_bundle_id_callback, pattern="^change_bundle_id_"))
+    application.add_handler(CallbackQueryHandler(get_archive_callback, pattern="^get_archive_"))
+    application.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
     application.add_handler(CallbackQueryHandler(back_callback, pattern="^back_"))
     
     # Запускаем бота
