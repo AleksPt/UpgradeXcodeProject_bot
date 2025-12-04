@@ -58,16 +58,17 @@ MSG_WAITING_BUNDLE_ID = (
 MSG_WAITING_ICON = (
     "🎨 Отправь новую иконку приложения:\n\n"
     "Требования:\n"
-    "• Формат: JPG\n"
+    "• Формат: JPG или PNG\n"
     "• Размер: 1024x1024 пикселей\n\n"
-    "Отправь файл или изображение."
+    "Отправь файл или изображение.\n"
+    "PNG будет автоматически конвертирован в JPG."
 )
 
 MSG_ICON_INVALID_FORMAT = (
     "❌ Неверный формат изображения!\n\n"
-    "Требования:\n"
-    "• Формат: JPG\n"
-    "• Размер: 1024x1024 пикселей\n\n"
+    "Текущий формат: {}\n"
+    "Поддерживаемые форматы: JPG, PNG\n"
+    "Размер: 1024x1024 пикселей\n\n"
     "Попробуй еще раз."
 )
 
@@ -1065,11 +1066,16 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
             width, height = img.size
             img_format = img.format
             
-            # Проверяем формат
-            if img_format not in ['JPEG', 'JPG']:
+            logger.info(f"Получено изображение: формат={img_format}, размер={width}x{height}, режим={img.mode}")
+            
+            # Проверяем формат - принимаем JPEG, JPG и PNG
+            if img_format not in ['JPEG', 'JPG', 'PNG']:
                 keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(MSG_ICON_INVALID_FORMAT, reply_markup=reply_markup)
+                await update.message.reply_text(
+                    MSG_ICON_INVALID_FORMAT.format(img_format or "неизвестный"),
+                    reply_markup=reply_markup
+                )
                 os.unlink(temp_image.name)
                 return
             
@@ -1084,6 +1090,24 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
                 os.unlink(temp_image.name)
                 return
             
+            # Конвертируем PNG в JPEG если нужно
+            if img_format == 'PNG':
+                logger.info(f"Конвертация PNG в JPEG для пользователя {user_id}")
+                # Конвертируем PNG в RGB JPEG (без альфа-канала)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    # Создаем белый фон для прозрачных изображений
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                    img = background
+                else:
+                    img = img.convert('RGB')
+                
+                # Пересохраняем как JPEG
+                img.save(temp_image.name, 'JPEG', quality=95)
+                logger.info("PNG успешно конвертирован в JPEG")
+            
             # Все проверки пройдены
             context.user_data.pop(f'waiting_icon_{user_id}', None)
             context.user_data[f'action_new_icon_{user_id}'] = temp_image.name
@@ -1092,11 +1116,15 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
             await show_actions_menu(update.message, context, user_id, is_query=False)
             
         except Exception as e:
-            logger.error(f"Ошибка при проверке изображения: {e}")
+            logger.error(f"Ошибка при проверке изображения: {e}", exc_info=True)
             keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(MSG_ICON_INVALID_FORMAT, reply_markup=reply_markup)
-            os.unlink(temp_image.name)
+            await update.message.reply_text(
+                MSG_ICON_INVALID_FORMAT.format("неизвестный"),
+                reply_markup=reply_markup
+            )
+            if os.path.exists(temp_image.name):
+                os.unlink(temp_image.name)
             
     except Exception as e:
         logger.error(f"Ошибка при обработке изображения: {e}", exc_info=True)
