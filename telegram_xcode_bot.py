@@ -1117,18 +1117,38 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
     
     try:
         # Получаем файл (фото или документ)
+        file_name = None
         if update.message.photo:
             # Берем фото наибольшего размера
             photo = update.message.photo[-1]
             file = await context.bot.get_file(photo.file_id)
+            file_name = "photo.jpg"
         elif update.message.document:
             file = await context.bot.get_file(update.message.document.file_id)
+            file_name = update.message.document.file_name or "document"
+            
+            # Проверяем расширение файла
+            if file_name:
+                ext = file_name.lower().split('.')[-1]
+                logger.info(f"Получен документ с расширением: {ext}")
+                
+                # Если это явно WebP или другой неподдерживаемый формат
+                if ext in ['webp', 'svg', 'gif', 'bmp', 'tiff', 'tif', 'ico']:
+                    keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(
+                        f"❌ Формат {ext.upper()} не поддерживается.\n\n"
+                        f"Пожалуйста, отправь изображение в формате JPG или PNG, размером 1024x1024 пикселей.",
+                        reply_markup=reply_markup
+                    )
+                    return
         else:
             return
         
         # Скачиваем файл
         temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
         await file.download_to_drive(temp_image.name)
+        logger.info(f"Файл скачан: {file_name}")
         
         # Проверяем изображение
         try:
