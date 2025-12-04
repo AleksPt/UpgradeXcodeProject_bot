@@ -41,8 +41,11 @@ MSG_VERSION_WILL_INCREMENT = "🆙 Версия и билд будут увел�
 MSG_NAME_WILL_CHANGE = "✏️ Название изменится на: {}"
 MSG_BUNDLE_ID_WILL_CHANGE = "📦 Bundle ID изменится на: {}"
 MSG_ICON_WILL_CHANGE = "🎨 Иконка будет изменена"
+MSG_DATE_WILL_CHANGE = "📅 Дата активации будет изменена: {}"
 
 MSG_WAITING_NAME = "✏️ Введи новое название приложения:"
+MSG_WAITING_DATE = "📅 Введи новую дату активации:"
+MSG_DATE_NOT_FOUND = "❌ Дата активации не найдена в проекте.\n\nКод .date(from: \"...\") отсутствует в файлах проекта."
 
 MSG_NAME_CHANGED = "✅ Название успешно изменено на: {}"
 
@@ -97,6 +100,7 @@ BUTTON_INCREMENT_VERSION = "🆙 Увеличить версию и билд"
 BUTTON_CHANGE_NAME = "✏️ Изменить название"
 BUTTON_CHANGE_BUNDLE_ID = "📦 Сменить Bundle ID"
 BUTTON_CHANGE_ICON = "🎨 Изменить иконку"
+BUTTON_CHANGE_DATE = "📅 Изменить дату активации"
 BUTTON_PROJECT_INFO = "ℹ️ Информация о проекте"
 BUTTON_GET_ARCHIVE = "📥 Получить обновлённый архив"
 BUTTON_BACK = "⬅️ Назад"
@@ -152,6 +156,10 @@ def get_pending_actions_summary(user_data, user_id):
     new_icon_path = user_data.get(f'action_new_icon_{user_id}')
     if new_icon_path:
         actions.append(MSG_ICON_WILL_CHANGE)
+    
+    new_activation_date = user_data.get(f'action_new_activation_date_{user_id}')
+    if new_activation_date:
+        actions.append(MSG_DATE_WILL_CHANGE.format(new_activation_date))
     
     if not actions:
         return "Нет запланированных действий."
@@ -323,6 +331,75 @@ def update_bundle_id(project_path, new_bundle_id):
         return False
 
 
+def find_activation_date_in_project(project_dir):
+    """Ищет .date(from: "...") во всех файлах .swift проекта.
+    Возвращает (найдено, текущая_дата, путь_к_файлу, полное_совпадение) или (False, None, None, None)"""
+    try:
+        project_path = Path(project_dir)
+        swift_files = list(project_path.rglob('*.swift'))
+        
+        # Паттерн для поиска .date(from: "любые символы")
+        date_pattern = r'\.date\(from:\s*"([^"]*)"\)'
+        
+        for swift_file in swift_files:
+            try:
+                with open(swift_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                match = re.search(date_pattern, content)
+                if match:
+                    current_date = match.group(1)
+                    logger.info(f"Найдена дата активации '{current_date}' в файле: {swift_file}")
+                    return (True, current_date, str(swift_file), match.group(0))
+            except Exception as e:
+                logger.warning(f"Ошибка при чтении файла {swift_file}: {e}")
+                continue
+        
+        logger.info("Дата активации не найдена в проекте")
+        return (False, None, None, None)
+    except Exception as e:
+        logger.error(f"Ошибка при поиске даты активации: {e}", exc_info=True)
+        return (False, None, None, None)
+
+
+def update_activation_date(project_dir, new_date):
+    """Обновляет дату активации в файлах .swift проекта.
+    Ищет .date(from: "...") и заменяет содержимое внутри кавычек.
+    Возвращает True если успешно обновлено"""
+    try:
+        project_path = Path(project_dir)
+        swift_files = list(project_path.rglob('*.swift'))
+        
+        # Паттерн для поиска и замены .date(from: "любые символы")
+        date_pattern = r'(\.date\(from:\s*")([^"]*?)("\))'
+        
+        updated = False
+        for swift_file in swift_files:
+            try:
+                with open(swift_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Проверяем, есть ли паттерн в файле
+                if re.search(date_pattern, content):
+                    # Заменяем дату
+                    new_content = re.sub(date_pattern, rf'\g<1>{new_date}\g<3>', content)
+                    
+                    # Сохраняем файл
+                    with open(swift_file, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    
+                    logger.info(f"Обновлена дата активации на '{new_date}' в файле: {swift_file}")
+                    updated = True
+            except Exception as e:
+                logger.warning(f"Ошибка при обновлении файла {swift_file}: {e}")
+                continue
+        
+        return updated
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении даты активации: {e}", exc_info=True)
+        return False
+
+
 def replace_app_icon(project_dir, new_icon_path):
     """Заменяет иконку приложения в проекте.
     Ищет Assets.xcassets/AppIcon.appiconset и заменяет изображение 1024x1024.
@@ -402,7 +479,7 @@ def replace_app_icon(project_dir, new_icon_path):
                     img.save(str(target_icon), 'PNG')
                     
                     logger.info(f"Создан файл иконки: {filename}")
-                updated_count += 1
+                    updated_count += 1
             
             # Сохраняем обновленный Contents.json
             if updated_count > 0:
@@ -469,7 +546,7 @@ def update_project_file(project_path):
 
 def process_archive_with_actions(archive_path, output_path, actions):
     """Обрабатывает архив применяя все запланированные действия.
-    actions - словарь с ключами: increment_version, new_name, new_bundle_id, new_icon_path
+    actions - словарь с ключами: increment_version, new_name, new_bundle_id, new_icon_path, new_activation_date
     Возвращает (успех, marketing_version, build_version, display_name, bundle_id)"""
     temp_dir = tempfile.mkdtemp()
     try:
@@ -510,6 +587,10 @@ def process_archive_with_actions(archive_path, output_path, actions):
         # Меняем иконку если указана
         if actions.get('new_icon_path'):
             replace_app_icon(temp_dir, actions['new_icon_path'])
+        
+        # Меняем дату активации если указана
+        if actions.get('new_activation_date'):
+            update_activation_date(temp_dir, actions['new_activation_date'])
         
         # Читаем финальную информацию из обработанного файла
         if project_files:
@@ -620,9 +701,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop(f'action_new_name_{user_id}', None)
         context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
         context.user_data.pop(f'action_new_icon_{user_id}', None)
+        context.user_data.pop(f'action_new_activation_date_{user_id}', None)
         context.user_data.pop(f'waiting_name_{user_id}', None)
         context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
         context.user_data.pop(f'waiting_icon_{user_id}', None)
+        context.user_data.pop(f'waiting_date_{user_id}', None)
         
         context.user_data[f'archive_{user_id}'] = temp_input.name
         context.user_data[f'file_name_{user_id}'] = document.file_name
@@ -665,6 +748,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
+            [InlineKeyboardButton(BUTTON_CHANGE_DATE, callback_data=f"change_date_{user_id}")],
             [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -705,6 +789,7 @@ async def show_actions_menu(query_or_message, context: ContextTypes.DEFAULT_TYPE
         [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_DATE, callback_data=f"change_date_{user_id}")],
         [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
     ]
     
@@ -712,7 +797,8 @@ async def show_actions_menu(query_or_message, context: ContextTypes.DEFAULT_TYPE
     if (context.user_data.get(f'action_increment_version_{user_id}') or 
         context.user_data.get(f'action_new_name_{user_id}') or 
         context.user_data.get(f'action_new_bundle_id_{user_id}') or
-        context.user_data.get(f'action_new_icon_{user_id}')):
+        context.user_data.get(f'action_new_icon_{user_id}') or
+        context.user_data.get(f'action_new_activation_date_{user_id}')):
         keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
         keyboard.append([InlineKeyboardButton(BUTTON_RESET, callback_data=f"reset_{user_id}")])
     
@@ -774,11 +860,12 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         'increment_version': context.user_data.get(f'action_increment_version_{user_id}', False),
         'new_name': context.user_data.get(f'action_new_name_{user_id}'),
         'new_bundle_id': context.user_data.get(f'action_new_bundle_id_{user_id}'),
-        'new_icon_path': context.user_data.get(f'action_new_icon_{user_id}')
+        'new_icon_path': context.user_data.get(f'action_new_icon_{user_id}'),
+        'new_activation_date': context.user_data.get(f'action_new_activation_date_{user_id}')
     }
     
     # Проверяем, есть ли хоть какие-то действия
-    if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id'], actions['new_icon_path']]):
+    if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id'], actions['new_icon_path'], actions['new_activation_date']]):
         await query.answer("Не выбрано ни одного действия!", show_alert=True)
         return
     
@@ -924,6 +1011,7 @@ async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop(f'action_increment_version_{user_id}', None)
     context.user_data.pop(f'action_new_name_{user_id}', None)
     context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
+    context.user_data.pop(f'action_new_activation_date_{user_id}', None)
     # Удаляем временный файл иконки если есть
     icon_path = context.user_data.pop(f'action_new_icon_{user_id}', None)
     if icon_path and os.path.exists(icon_path):
@@ -1020,6 +1108,60 @@ async def change_icon_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text(MSG_WAITING_ICON, reply_markup=reply_markup)
 
 
+async def change_date_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Изменить дату активации'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Ищем дату активации в проекте
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Распаковываем архив временно для поиска даты
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Ищем дату активации
+        found, current_date, file_path, _ = find_activation_date_in_project(temp_dir)
+        
+        if not found:
+            # Дата не найдена
+            keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(MSG_DATE_NOT_FOUND, reply_markup=reply_markup)
+            return
+        
+        # Дата найдена, показываем сообщение с текущей датой
+        context.user_data[f'waiting_date_{user_id}'] = True
+        
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        message = f"{MSG_WAITING_DATE}\n\n📌 Текущая дата: {current_date}"
+        await query.edit_message_text(message, reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при поиске даты активации: {e}", exc_info=True)
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("❌ Ошибка при чтении проекта", reply_markup=reply_markup)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    
+
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатия на кнопку 'Назад'"""
     query = update.callback_query
@@ -1037,6 +1179,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop(f'waiting_name_{user_id}', None)
     context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
     context.user_data.pop(f'waiting_icon_{user_id}', None)
+    context.user_data.pop(f'waiting_date_{user_id}', None)
     
     # Проверяем наличие файла в user_data
     archive_path = context.user_data.get(f'archive_{user_id}')
@@ -1049,7 +1192,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик текстовых сообщений - для ввода нового названия или Bundle ID"""
+    """Обработчик текстовых сообщений - для ввода нового названия, Bundle ID или даты активации"""
     user_id = update.effective_user.id
     
     # Проверяем, ждет ли бот ввода названия
@@ -1060,6 +1203,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Проверяем, ждет ли бот ввода Bundle ID
     if context.user_data.get(f'waiting_bundle_id_{user_id}'):
         await handle_bundle_id_input(update, context, user_id)
+        return
+    
+    # Проверяем, ждет ли бот ввода даты активации
+    if context.user_data.get(f'waiting_date_{user_id}'):
+        await handle_activation_date_input(update, context, user_id)
         return
     
     # Если не ждет ввода, игнорируем сообщение
@@ -1117,6 +1265,34 @@ async def handle_bundle_id_input(update: Update, context: ContextTypes.DEFAULT_T
     
     # Сохраняем новый Bundle ID в действия
     context.user_data[f'action_new_bundle_id_{user_id}'] = new_bundle_id
+    
+    # Показываем обновленное меню
+    await show_actions_menu(update.message, context, user_id, is_query=False)
+
+
+async def handle_activation_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Обработка ввода новой даты активации"""
+    # Проверяем наличие файла
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await update.message.reply_text(MSG_FILE_NOT_FOUND)
+        context.user_data.pop(f'waiting_date_{user_id}', None)
+        return
+    
+    # Получаем новую дату
+    new_date = update.message.text.strip()
+    
+    if not new_date:
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("❌ Дата не может быть пустой. Попробуйте еще раз.", reply_markup=reply_markup)
+        return
+    
+    # Убираем состояние ожидания
+    context.user_data.pop(f'waiting_date_{user_id}', None)
+    
+    # Сохраняем новую дату в действия
+    context.user_data[f'action_new_activation_date_{user_id}'] = new_date
     
     # Показываем обновленное меню
     await show_actions_menu(update.message, context, user_id, is_query=False)
@@ -1190,7 +1366,6 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
                 )
                 os.unlink(temp_image.name)
                 return
-            
             # Проверяем размер
             if width != 1024 or height != 1024:
                 keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
@@ -1259,6 +1434,7 @@ def main():
     application.add_handler(CallbackQueryHandler(change_name_callback, pattern="^change_name_"))
     application.add_handler(CallbackQueryHandler(change_bundle_id_callback, pattern="^change_bundle_id_"))
     application.add_handler(CallbackQueryHandler(change_icon_callback, pattern="^change_icon_"))
+    application.add_handler(CallbackQueryHandler(change_date_callback, pattern="^change_date_"))
     application.add_handler(CallbackQueryHandler(project_info_callback, pattern="^project_info_"))
     application.add_handler(CallbackQueryHandler(get_archive_callback, pattern="^get_archive_"))
     application.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
