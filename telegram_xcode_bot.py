@@ -326,8 +326,11 @@ def update_bundle_id(project_path, new_bundle_id):
 def replace_app_icon(project_dir, new_icon_path):
     """Заменяет иконку приложения в проекте.
     Ищет Assets.xcassets/AppIcon.appiconset и заменяет изображение 1024x1024.
+    Обновляет Contents.json для правильной привязки иконки.
     Возвращает True если успешно заменено"""
     try:
+        import json
+        
         # Ищем Assets.xcassets/AppIcon.appiconset
         project_path = Path(project_dir)
         appiconset_paths = list(project_path.rglob('Assets.xcassets/AppIcon.appiconset'))
@@ -338,19 +341,67 @@ def replace_app_icon(project_dir, new_icon_path):
         
         icon_replaced = False
         for appiconset_path in appiconset_paths:
-            # Копируем новую иконку как AppIcon-1024.png (стандартное имя для 1024x1024)
-            target_icon = appiconset_path / 'AppIcon-1024.png'
+            # Читаем Contents.json
+            contents_json_path = appiconset_path / 'Contents.json'
             
-            # Конвертируем в PNG если нужно
+            if not contents_json_path.exists():
+                logger.warning(f"Не найден Contents.json в {appiconset_path}")
+                continue
+            
+            # Загружаем JSON
+            with open(contents_json_path, 'r', encoding='utf-8') as f:
+                contents = json.load(f)
+            
+            # Открываем новую иконку
             img = Image.open(new_icon_path)
-            img.save(str(target_icon), 'PNG')
             
-            logger.info(f"Заменена иконка в {appiconset_path}")
-            icon_replaced = True
+            # Ищем все записи с размером 1024x1024 и обновляем их
+            updated_count = 0
+            for image_entry in contents.get('images', []):
+                # Проверяем размер
+                size = image_entry.get('size')
+                if size == '1024x1024':
+                    # Формируем имя файла на основе idiom и appearances
+                    idiom = image_entry.get('idiom', 'universal')
+                    scale = image_entry.get('scale', '1x')
+                    
+                    # Определяем имя файла
+                    appearances = image_entry.get('appearances', [])
+                    if appearances:
+                        # Есть appearance (dark, tinted и т.д.)
+                        appearance_value = appearances[0].get('value', 'any')
+                        filename = f'AppIcon-{appearance_value}-1024.png'
+                    else:
+                        # Any appearance (по умолчанию)
+                        filename = 'AppIcon-1024.png'
+                    
+                    # Обновляем filename в JSON
+                    image_entry['filename'] = filename
+                    
+                    # Сохраняем иконку с нужным именем
+                    target_icon = appiconset_path / filename
+                    img.save(str(target_icon), 'PNG')
+                    
+                    logger.info(f"Создан файл иконки: {filename}")
+                    updated_count += 1
+            
+            # Сохраняем обновленный Contents.json
+            if updated_count > 0:
+                with open(contents_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(contents, f, indent=2)
+                
+                logger.info(f"Обновлено {updated_count} иконок в {appiconset_path}")
+                icon_replaced = True
+            else:
+                # Если не нашли записи 1024x1024, просто сохраняем как AppIcon-1024.png
+                logger.warning(f"Не найдены записи 1024x1024 в Contents.json, сохраняем как AppIcon-1024.png")
+                target_icon = appiconset_path / 'AppIcon-1024.png'
+                img.save(str(target_icon), 'PNG')
+                icon_replaced = True
         
         return icon_replaced
     except Exception as e:
-        logger.error(f"Ошибка при замене иконки: {e}")
+        logger.error(f"Ошибка при замене иконки: {e}", exc_info=True)
         return False
 
 
@@ -1125,7 +1176,7 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
             )
             if os.path.exists(temp_image.name):
                 os.unlink(temp_image.name)
-            
+                
     except Exception as e:
         logger.error(f"Ошибка при обработке изображения: {e}", exc_info=True)
         await update.message.reply_text("❌ Ошибка при обработке изображения")
