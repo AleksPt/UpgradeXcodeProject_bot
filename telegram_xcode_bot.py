@@ -70,6 +70,7 @@ MSG_FILE_NOT_FOUND = "❌ Файл не найден. Пожалуйста, от
 BUTTON_INCREMENT_VERSION = "🆙 Увеличить версию и билд"
 BUTTON_CHANGE_NAME = "✏️ Изменить название"
 BUTTON_CHANGE_BUNDLE_ID = "📦 Сменить Bundle ID"
+BUTTON_PROJECT_INFO = "ℹ️ Информация о проекте"
 BUTTON_GET_ARCHIVE = "📥 Получить обновлённый архив"
 BUTTON_BACK = "⬅️ Назад"
 BUTTON_RESET = "🔄 Начать заново"
@@ -496,7 +497,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
             [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
-            [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")]
+            [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
+            [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -534,7 +536,8 @@ async def show_actions_menu(query_or_message, context: ContextTypes.DEFAULT_TYPE
     keyboard = [
         [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
-        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")]
+        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
+        [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
     ]
     
     # Если есть хотя бы одно действие, добавляем кнопку получения архива
@@ -673,6 +676,64 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(
             MSG_ERROR_PREFIX + str(e) + MSG_ERROR_SUFFIX
         )
+
+
+async def project_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку 'Информация о проекте'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Читаем информацию из архива
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Распаковываем архив временно для чтения информации
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Ищем первый project.pbxproj файл
+        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+        
+        if not project_files:
+            await query.answer("Не найдено файлов project.pbxproj", show_alert=True)
+            return
+        
+        # Читаем информацию из первого найденного файла
+        marketing_version, build_version, display_name, bundle_id = read_project_info(str(project_files[0]))
+        
+        # Формируем сообщение с информацией
+        info_message = (
+            "ℹ️ Информация о проекте:\n\n"
+            f"Версия: {marketing_version or 'неизвестно'}\n"
+            f"Билд: {build_version or 'неизвестно'}\n"
+            f"Название: {display_name or 'неизвестно'}\n"
+            f"Bundle ID: {bundle_id or 'неизвестно'}"
+        )
+        
+        # Создаем кнопку "Назад"
+        keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(info_message, reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при чтении информации о проекте: {e}", exc_info=True)
+        await query.answer("Ошибка при чтении информации", show_alert=True)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -869,6 +930,7 @@ def main():
     application.add_handler(CallbackQueryHandler(increment_version_callback, pattern="^increment_version_"))
     application.add_handler(CallbackQueryHandler(change_name_callback, pattern="^change_name_"))
     application.add_handler(CallbackQueryHandler(change_bundle_id_callback, pattern="^change_bundle_id_"))
+    application.add_handler(CallbackQueryHandler(project_info_callback, pattern="^project_info_"))
     application.add_handler(CallbackQueryHandler(get_archive_callback, pattern="^get_archive_"))
     application.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
     application.add_handler(CallbackQueryHandler(back_callback, pattern="^back_"))
