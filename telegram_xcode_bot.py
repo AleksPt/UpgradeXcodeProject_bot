@@ -102,7 +102,7 @@ BUTTON_CHANGE_BUNDLE_ID = "📦 Сменить Bundle ID"
 BUTTON_CHANGE_ICON = "🎨 Изменить иконку"
 BUTTON_CHANGE_DATE = "📅 Изменить дату активации"
 BUTTON_PROJECT_INFO = "ℹ️ Информация о проекте"
-BUTTON_GET_ARCHIVE = "📥 Получить обновлённый архив"
+BUTTON_GET_ARCHIVE = "📥 ПОЛУЧИТЬ ОБНОВЛЁННЫЙ АРХИВ"
 BUTTON_BACK = "⬅️ Назад"
 BUTTON_RESET = "🔄 Начать заново"
 
