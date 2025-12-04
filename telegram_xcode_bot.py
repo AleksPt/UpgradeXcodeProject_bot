@@ -602,6 +602,28 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Сохраняем путь к файлу в user_data для последующей обработки
         user_id = update.effective_user.id
+        
+        # Удаляем предыдущий архив если он есть
+        old_archive = context.user_data.get(f'archive_{user_id}')
+        if old_archive and os.path.exists(old_archive):
+            os.unlink(old_archive)
+            logger.info(f"Удален предыдущий архив: {old_archive}")
+        
+        # Удаляем старую иконку если она есть
+        old_icon = context.user_data.get(f'action_new_icon_{user_id}')
+        if old_icon and os.path.exists(old_icon):
+            os.unlink(old_icon)
+            logger.info(f"Удалена предыдущая иконка: {old_icon}")
+        
+        # Очищаем все действия при загрузке нового архива
+        context.user_data.pop(f'action_increment_version_{user_id}', None)
+        context.user_data.pop(f'action_new_name_{user_id}', None)
+        context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
+        context.user_data.pop(f'action_new_icon_{user_id}', None)
+        context.user_data.pop(f'waiting_name_{user_id}', None)
+        context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
+        context.user_data.pop(f'waiting_icon_{user_id}', None)
+        
         context.user_data[f'archive_{user_id}'] = temp_input.name
         context.user_data[f'file_name_{user_id}'] = document.file_name
         
