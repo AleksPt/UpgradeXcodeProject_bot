@@ -338,7 +338,7 @@ def update_project_file(project_path):
 def process_archive_with_actions(archive_path, output_path, actions):
     """Обрабатывает архив применяя все запланированные действия.
     actions - словарь с ключами: increment_version, new_name, new_bundle_id
-    Возвращает (успех, marketing_version, build_version)"""
+    Возвращает (успех, marketing_version, build_version, display_name, bundle_id)"""
     temp_dir = tempfile.mkdtemp()
     try:
         # Распаковываем архив
@@ -353,6 +353,8 @@ def process_archive_with_actions(archive_path, output_path, actions):
         
         marketing_version = None
         build_version = None
+        display_name = None
+        bundle_id = None
         
         # Применяем все действия к каждому файлу
         for project_file in project_files:
@@ -373,9 +375,9 @@ def process_archive_with_actions(archive_path, output_path, actions):
             if actions.get('new_bundle_id'):
                 update_bundle_id(project_path, actions['new_bundle_id'])
         
-        # Если версия не была обновлена, читаем текущие значения
-        if marketing_version is None and project_files:
-            marketing_version, build_version = read_project_versions(str(project_files[0]))
+        # Читаем финальную информацию из обработанного файла
+        if project_files:
+            marketing_version, build_version, display_name, bundle_id = read_project_info(str(project_files[0]))
         
         # Создаем новый архив
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
@@ -386,7 +388,7 @@ def process_archive_with_actions(archive_path, output_path, actions):
                     zip_out.write(file_path, arc_name)
         
         logger.info(f"Обработан архив с действиями: {actions}")
-        return (True, marketing_version, build_version)
+        return (True, marketing_version, build_version, display_name, bundle_id)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -620,24 +622,21 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         
         try:
             # Обрабатываем архив со всеми действиями
-            success, marketing_version, build_version = process_archive_with_actions(
+            success, marketing_version, build_version, display_name, bundle_id = process_archive_with_actions(
                 archive_path, temp_output.name, actions
             )
             
             if not success:
                 raise ValueError("Не удалось обработать архив")
             
-            # Формируем сообщение с результатами
-            result_parts = []
-            if actions['increment_version']:
-                result_parts.append(f"Версия: {marketing_version or 'неизвестно'}")
-                result_parts.append(f"Билд: {build_version or 'неизвестно'}")
-            if actions['new_name']:
-                result_parts.append(f"Название: {actions['new_name']}")
-            if actions['new_bundle_id']:
-                result_parts.append(f"Bundle ID: {actions['new_bundle_id']}")
-            
-            success_message = "✅ Архив обновлен!\n\n" + "\n".join(result_parts)
+            # Формируем сообщение с результатами (всегда показываем все параметры)
+            success_message = (
+                "✅ Архив обновлен!\n\n"
+                f"Версия: {marketing_version or 'неизвестно'}\n"
+                f"Билд: {build_version or 'неизвестно'}\n"
+                f"Название: {display_name or 'неизвестно'}\n"
+                f"Bundle ID: {bundle_id or 'неизвестно'}"
+            )
             
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
