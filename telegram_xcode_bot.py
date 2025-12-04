@@ -510,7 +510,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик документов (архивов) - сохраняет файл и показывает кнопку"""
+    user_id = update.effective_user.id
     document = update.message.document
+    
+    # Если бот ждет иконку, передаем обработку в handle_photo_or_document
+    if context.user_data.get(f'waiting_icon_{user_id}'):
+        await handle_photo_or_document(update, context)
+        return
     
     # Проверяем, что это архив
     if not document.file_name or not document.file_name.lower().endswith(('.zip', '.zipx')):
