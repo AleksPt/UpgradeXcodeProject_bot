@@ -44,8 +44,8 @@ MSG_ICON_WILL_CHANGE = "🎨 Иконка будет изменена"
 MSG_DATE_WILL_CHANGE = "📅 Дата активации будет изменена: {}"
 
 MSG_WAITING_NAME = "✏️ Введи новое название приложения:"
-MSG_WAITING_DATE = "📅 Введи новую дату активации:"
-MSG_DATE_NOT_FOUND = "❌ Дата активации не найдена в проекте.\n\nКод .date(from: \"...\") отсутствует в файлах проекта."
+MSG_WAITING_DATE = "📅 Введи новую дату активации (год/месяц/день):\n\nПример: 2026/01/31"
+MSG_DATE_NOT_FOUND = "❌ Дата активации не найдена в проекте."
 
 MSG_NAME_CHANGED = "✅ Название успешно изменено на: {}"
 
@@ -236,8 +236,8 @@ def read_project_versions(project_path):
 
 
 def read_project_info(project_path):
-    """Читает всю информацию из project.pbxproj файла.
-    Возвращает (marketing_version, build_version, display_name, bundle_id)"""
+    """Читает всю информацию из project.pbxproj файла и ищет дату активации.
+    Возвращает (marketing_version, build_version, display_name, bundle_id, activation_date)"""
     try:
         with open(project_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -267,10 +267,14 @@ def read_project_info(project_path):
         if bundle_id_match:
             bundle_id = bundle_id_match.group(1).strip().strip('"')
         
-        return (marketing_version, build_version, display_name, bundle_id)
+        # Ищем дату активации в проекте (возвращаемся к корневой директории проекта)
+        project_dir = Path(project_path).parent.parent.parent
+        found, activation_date, _, _ = find_activation_date_in_project(str(project_dir))
+        
+        return (marketing_version, build_version, display_name, bundle_id, activation_date if found else None)
     except Exception as e:
         logger.error(f"Ошибка при чтении информации из {project_path}: {e}")
-        return (None, None, None, None)
+        return (None, None, None, None, None)
 
 
 def update_display_name(project_path, new_name):
@@ -547,7 +551,7 @@ def update_project_file(project_path):
 def process_archive_with_actions(archive_path, output_path, actions):
     """Обрабатывает архив применяя все запланированные действия.
     actions - словарь с ключами: increment_version, new_name, new_bundle_id, new_icon_path, new_activation_date
-    Возвращает (успех, marketing_version, build_version, display_name, bundle_id)"""
+    Возвращает (успех, marketing_version, build_version, display_name, bundle_id, activation_date)"""
     temp_dir = tempfile.mkdtemp()
     try:
         # Распаковываем архив
@@ -564,6 +568,7 @@ def process_archive_with_actions(archive_path, output_path, actions):
         build_version = None
         display_name = None
         bundle_id = None
+        activation_date = None
         
         # Применяем все действия к каждому файлу
         for project_file in project_files:
@@ -594,7 +599,7 @@ def process_archive_with_actions(archive_path, output_path, actions):
         
         # Читаем финальную информацию из обработанного файла
         if project_files:
-            marketing_version, build_version, display_name, bundle_id = read_project_info(str(project_files[0]))
+            marketing_version, build_version, display_name, bundle_id, activation_date = read_project_info(str(project_files[0]))
         
         # Создаем новый архив
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
@@ -605,7 +610,7 @@ def process_archive_with_actions(archive_path, output_path, actions):
                     zip_out.write(file_path, arc_name)
         
         logger.info(f"Обработан архив с действиями: {actions}")
-        return (True, marketing_version, build_version, display_name, bundle_id)
+        return (True, marketing_version, build_version, display_name, bundle_id, activation_date)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -726,10 +731,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             build_version = "неизвестно"
             display_name = "неизвестно"
             bundle_id = "неизвестно"
+            activation_date = "не обнаружена"
             
             if project_files:
                 # Читаем всю информацию из первого найденного файла
-                m_version, b_version, d_name, b_id = read_project_info(str(project_files[0]))
+                m_version, b_version, d_name, b_id, a_date = read_project_info(str(project_files[0]))
                 if m_version:
                     marketing_version = m_version
                 if b_version:
@@ -738,6 +744,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     display_name = d_name
                 if b_id:
                     bundle_id = b_id
+                if a_date:
+                    activation_date = a_date
         finally:
             # Удаляем временную директорию
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -759,7 +767,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Версия: {marketing_version}\n"
             f"Билд: {build_version}\n"
             f"Название: {display_name}\n"
-            f"Bundle ID: {bundle_id}\n\n"
+            f"Bundle ID: {bundle_id}\n"
+            f"Дата активации: {activation_date}\n\n"
             "Выбери действия:"
         )
         
@@ -877,7 +886,7 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         
         try:
             # Обрабатываем архив со всеми действиями
-            success, marketing_version, build_version, display_name, bundle_id = process_archive_with_actions(
+            success, marketing_version, build_version, display_name, bundle_id, activation_date = process_archive_with_actions(
                 archive_path, temp_output.name, actions
             )
             
@@ -890,7 +899,8 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"Версия: {marketing_version or 'неизвестно'}\n"
                 f"Билд: {build_version or 'неизвестно'}\n"
                 f"Название: {display_name or 'неизвестно'}\n"
-                f"Bundle ID: {bundle_id or 'неизвестно'}"
+                f"Bundle ID: {bundle_id or 'неизвестно'}\n"
+                f"Дата активации: {activation_date or 'не обнаружена'}"
             )
             
             # Отправляем обратно с фиксированным именем
@@ -970,7 +980,7 @@ async def project_info_callback(update: Update, context: ContextTypes.DEFAULT_TY
             return
         
         # Читаем информацию из первого найденного файла
-        marketing_version, build_version, display_name, bundle_id = read_project_info(str(project_files[0]))
+        marketing_version, build_version, display_name, bundle_id, activation_date = read_project_info(str(project_files[0]))
         
         # Формируем сообщение с информацией
         info_message = (
@@ -978,7 +988,8 @@ async def project_info_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"Версия: {marketing_version or 'неизвестно'}\n"
             f"Билд: {build_version or 'неизвестно'}\n"
             f"Название: {display_name or 'неизвестно'}\n"
-            f"Bundle ID: {bundle_id or 'неизвестно'}"
+            f"Bundle ID: {bundle_id or 'неизвестно'}\n"
+            f"Дата активации: {activation_date or 'не обнаружена'}"
         )
         
         # Создаем кнопку "Назад"
