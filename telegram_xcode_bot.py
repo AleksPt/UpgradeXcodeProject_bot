@@ -355,6 +355,25 @@ def replace_app_icon(project_dir, new_icon_path):
             # Открываем новую иконку
             img = Image.open(new_icon_path)
             
+            # Сначала собираем список старых файлов для удаления
+            old_files_to_delete = []
+            for image_entry in contents.get('images', []):
+                size = image_entry.get('size')
+                if size == '1024x1024':
+                    old_filename = image_entry.get('filename')
+                    if old_filename:
+                        old_file_path = appiconset_path / old_filename
+                        if old_file_path.exists():
+                            old_files_to_delete.append(old_file_path)
+            
+            # Удаляем старые файлы
+            for old_file in old_files_to_delete:
+                try:
+                    old_file.unlink()
+                    logger.info(f"Удален старый файл иконки: {old_file.name}")
+                except Exception as e:
+                    logger.warning(f"Не удалось удалить {old_file.name}: {e}")
+            
             # Ищем все записи с размером 1024x1024 и обновляем их
             updated_count = 0
             for image_entry in contents.get('images', []):
@@ -383,7 +402,7 @@ def replace_app_icon(project_dir, new_icon_path):
                     img.save(str(target_icon), 'PNG')
                     
                     logger.info(f"Создан файл иконки: {filename}")
-                    updated_count += 1
+                updated_count += 1
             
             # Сохраняем обновленный Contents.json
             if updated_count > 0:
@@ -1165,7 +1184,7 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
             
             # Показываем обновленное меню
             await show_actions_menu(update.message, context, user_id, is_query=False)
-            
+                
         except Exception as e:
             logger.error(f"Ошибка при проверке изображения: {e}", exc_info=True)
             keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
