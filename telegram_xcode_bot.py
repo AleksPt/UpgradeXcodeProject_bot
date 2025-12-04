@@ -30,8 +30,6 @@ MSG_START_GREETING = (
 
 MSG_WRONG_FILE_FORMAT = "❌ Пожалуйста, отправь zip архив с проектом Xcode."
 
-MSG_ARCHIVE_RECEIVED = "📦 Архив получен!\n\nТекущая версия: {}\nТекущий билд: {}\n\nВыбери действия:"
-
 MSG_PROCESSING = "⏳ Обрабатываю архив..."
 
 MSG_SUCCESS = "✅ Архив обновлен!\n\nНовая версия: {}\nНовый билд: {}"
@@ -195,6 +193,44 @@ def read_project_versions(project_path):
     except Exception as e:
         logger.error(f"Ошибка при чтении версий из {project_path}: {e}")
         return (None, None)
+
+
+def read_project_info(project_path):
+    """Читает всю информацию из project.pbxproj файла.
+    Возвращает (marketing_version, build_version, display_name, bundle_id)"""
+    try:
+        with open(project_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        marketing_version = None
+        build_version = None
+        display_name = None
+        bundle_id = None
+        
+        # Ищем MARKETING_VERSION
+        marketing_match = re.search(r'MARKETING_VERSION\s*=\s*([^;]+);', content)
+        if marketing_match:
+            marketing_version = marketing_match.group(1).strip().strip('"')
+        
+        # Ищем CURRENT_PROJECT_VERSION
+        build_match = re.search(r'CURRENT_PROJECT_VERSION\s*=\s*([^;]+);', content)
+        if build_match:
+            build_version = build_match.group(1).strip().strip('"')
+        
+        # Ищем INFOPLIST_KEY_CFBundleDisplayName
+        display_name_match = re.search(r'INFOPLIST_KEY_CFBundleDisplayName\s*=\s*([^;]+);', content)
+        if display_name_match:
+            display_name = display_name_match.group(1).strip().strip('"')
+        
+        # Ищем PRODUCT_BUNDLE_IDENTIFIER
+        bundle_id_match = re.search(r'PRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);', content)
+        if bundle_id_match:
+            bundle_id = bundle_id_match.group(1).strip().strip('"')
+        
+        return (marketing_version, build_version, display_name, bundle_id)
+    except Exception as e:
+        logger.error(f"Ошибка при чтении информации из {project_path}: {e}")
+        return (None, None, None, None)
 
 
 def update_display_name(project_path, new_name):
@@ -426,10 +462,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(LOG_FILE_UPLOADED.format(document.file_name))
         
-        # Читаем текущие версии из архива
+        # Читаем текущую информацию из архива
         temp_dir = tempfile.mkdtemp()
         try:
-            # Распаковываем архив временно для чтения версий
+            # Распаковываем архив временно для чтения информации
             with zipfile.ZipFile(temp_input.name, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
             
@@ -438,14 +474,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             marketing_version = "неизвестно"
             build_version = "неизвестно"
+            display_name = "неизвестно"
+            bundle_id = "неизвестно"
             
             if project_files:
-                # Читаем версии из первого найденного файла
-                m_version, b_version = read_project_versions(str(project_files[0]))
+                # Читаем всю информацию из первого найденного файла
+                m_version, b_version, d_name, b_id = read_project_info(str(project_files[0]))
                 if m_version:
                     marketing_version = m_version
                 if b_version:
                     build_version = b_version
+                if d_name:
+                    display_name = d_name
+                if b_id:
+                    bundle_id = b_id
         finally:
             # Удаляем временную директорию
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -458,8 +500,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Формируем сообщение с текущими версиями
-        archive_message = MSG_ARCHIVE_RECEIVED.format(marketing_version, build_version)
+        # Формируем сообщение с текущей информацией
+        archive_message = (
+            "📦 Архив получен!\n\n"
+            f"Версия: {marketing_version}\n"
+            f"Билд: {build_version}\n"
+            f"Название: {display_name}\n"
+            f"Bundle ID: {bundle_id}\n\n"
+            "Выбери действия:"
+        )
         
         await update.message.reply_text(
             archive_message,
