@@ -1,7 +1,7 @@
 """Функции валидации данных."""
 
 import re
-from typing import Tuple
+from typing import Tuple, Optional
 
 
 def validate_bundle_id(bundle_id: str) -> bool:
