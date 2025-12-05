@@ -166,22 +166,116 @@ PRODUCT_BUNDLE_IDENTIFIER = com.newcompany.newapp;
 # Установите зависимости
 pip install -r requirements.txt
 
+# Для разработки установите дополнительные зависимости
+pip install -r requirements-dev.txt
+
 # Установите переменную окружения
 export BOT_TOKEN="ваш_токен_здесь"
 
-# Запустите бота
-python telegram_xcode_bot.py
+# Запустите бота (несколько вариантов)
+python main.py
+# или
+python -m telegram_xcode_bot
+```
+
+### Запуск тестов
+
+```bash
+# Запустить все тесты
+pytest
+
+# Запустить с покрытием кода
+pytest --cov=telegram_xcode_bot
+
+# Запустить конкретный файл тестов
+pytest tests/test_validators.py
+```
+
+### Проверка кода
+
+```bash
+# Проверка типов с mypy
+mypy telegram_xcode_bot
+
+# Форматирование кода
+black telegram_xcode_bot tests
+isort telegram_xcode_bot tests
+
+# Линтинг
+flake8 telegram_xcode_bot
+pylint telegram_xcode_bot
 ```
 
 ## Структура проекта
 
 ```
 telegram-xcode-bot/
-├── telegram_xcode_bot.py  # Основной файл бота
-├── requirements.txt        # Зависимости Python
-├── Procfile               # Конфигурация для Railway
-└── README.md             # Документация
+├── telegram_xcode_bot/           # Основной пакет
+│   ├── __init__.py               # Точка входа пакета
+│   ├── __main__.py               # Запуск через python -m
+│   ├── config.py                 # Конфигурация и константы
+│   ├── logger.py                 # Централизованное логирование
+│   ├── exceptions.py             # Кастомные исключения
+│   ├── handlers/                 # Telegram handlers
+│   │   ├── __init__.py
+│   │   ├── command_handlers.py   # /start и команды
+│   │   ├── document_handlers.py  # Обработка архивов
+│   │   ├── callback_handlers.py  # Inline кнопки
+│   │   ├── input_handlers.py     # Текстовый ввод, фото
+│   │   └── helpers.py            # Вспомогательные функции
+│   ├── services/                 # Бизнес-логика
+│   │   ├── __init__.py
+│   │   ├── xcode_service.py      # Работа с Xcode проектами
+│   │   ├── archive_service.py    # Обработка архивов
+│   │   └── icon_service.py       # Работа с иконками
+│   └── utils/                    # Вспомогательные функции
+│       ├── __init__.py
+│       ├── validators.py         # Валидация данных
+│       └── version_utils.py      # Работа с версиями
+├── tests/                        # Тесты
+│   ├── __init__.py
+│   ├── conftest.py               # Фикстуры pytest
+│   ├── test_xcode_service.py
+│   └── test_validators.py
+├── main.py                       # Точка входа (для Railway)
+├── requirements.txt              # Основные зависимости
+├── requirements-dev.txt          # Зависимости для разработки
+├── Procfile                      # Конфигурация для Railway
+├── README.md                     # Документация
+└── CHANGELOG.md                  # История изменений
 ```
+
+## Архитектура проекта
+
+Проект организован по модульному принципу с четким разделением ответственности:
+
+### Слои приложения
+
+1. **Handlers** (`telegram_xcode_bot/handlers/`) - обработка входящих сообщений и взаимодействие с пользователем
+   - Валидация входных данных
+   - Управление состоянием пользователя
+   - Формирование ответов
+
+2. **Services** (`telegram_xcode_bot/services/`) - бизнес-логика приложения
+   - Работа с Xcode проектами
+   - Обработка архивов
+   - Управление иконками
+
+3. **Utils** (`telegram_xcode_bot/utils/`) - вспомогательные функции
+   - Валидация данных
+   - Работа с версиями
+
+4. **Config** (`telegram_xcode_bot/config.py`) - конфигурация и константы
+   - Текстовые сообщения
+   - Настройки приложения
+
+### Преимущества модульной архитектуры
+
+- ✅ **Легкая поддержка** - каждый модуль отвечает за свою область
+- ✅ **Тестируемость** - легко писать unit-тесты для отдельных компонентов
+- ✅ **Расширяемость** - просто добавлять новые функции
+- ✅ **Типизация** - использование type hints и dataclasses для безопасности типов
+- ✅ **Централизованное логирование** - единое место для управления логами
 
 ## Обработка ошибок
 
@@ -191,6 +285,13 @@ telegram-xcode-bot/
 - Ошибки при обработке файлов
 
 Все ошибки логируются и отправляются пользователю в понятном виде.
+
+Используются кастомные исключения:
+- `XcodeProjectError` - ошибки работы с Xcode проектами
+- `ArchiveProcessingError` - ошибки обработки архивов
+- `IconProcessingError` - ошибки работы с иконками
+- `ValidationError` - ошибки валидации данных
+- `ConfigurationError` - ошибки конфигурации
 
 ## Логирование
 
