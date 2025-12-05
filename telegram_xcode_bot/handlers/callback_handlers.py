@@ -554,10 +554,11 @@ async def add_ipad_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if project_files:
             device_family = read_device_family(str(project_files[0]))
             if device_family == "Universal" or device_family == "iPad":
-                # Показываем alert и остаемся в меню
-                await query.answer(MSG_IPAD_ALREADY_SUPPORTED, show_alert=True)
-                # Показываем меню без изменений
-                await show_actions_menu(query, context, user_id, is_query=True)
+                # iPad уже поддерживается - показываем сообщение с кнопкой Назад
+                await query.answer()
+                keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(MSG_IPAD_ALREADY_SUPPORTED, reply_markup=reply_markup)
                 return
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

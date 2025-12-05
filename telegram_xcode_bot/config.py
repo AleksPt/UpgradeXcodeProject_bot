@@ -33,7 +33,7 @@ MSG_BUNDLE_ID_WILL_CHANGE: Final[str] = "📦 Bundle ID изменится на:
 MSG_ICON_WILL_CHANGE: Final[str] = "🎨 Иконка будет изменена"
 MSG_DATE_WILL_CHANGE: Final[str] = "📅 Дата активации будет изменена: {}"
 MSG_IPAD_WILL_ADD: Final[str] = "📱 Будет добавлена поддержка iPad"
-MSG_IPAD_ALREADY_SUPPORTED: Final[str] = "Проект уже поддерживает iPad"
+MSG_IPAD_ALREADY_SUPPORTED: Final[str] = "🤷‍♂️ Проект уже поддерживает iPad."
 
 MSG_WAITING_NAME: Final[str] = "✏️ Введи новое название приложения:"
 MSG_WAITING_DATE: Final[str] = "📅 Введи новую дату активации (год/месяц/день):\n\nПример: 2026/01/31"
