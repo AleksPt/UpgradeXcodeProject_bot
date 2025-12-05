@@ -7,10 +7,11 @@ from telegram.ext import ContextTypes
 from telegram_xcode_bot.config import (
     MSG_FILE_NOT_FOUND,
     MSG_BUNDLE_ID_INVALID,
+    MSG_DATE_INVALID,
     BUTTON_BACK,
 )
 from telegram_xcode_bot.logger import get_logger
-from telegram_xcode_bot.utils.validators import validate_bundle_id
+from telegram_xcode_bot.utils.validators import validate_bundle_id, validate_date_format
 from telegram_xcode_bot.handlers.helpers import show_actions_menu
 
 logger = get_logger(__name__)
@@ -144,10 +145,12 @@ async def handle_activation_date_input(update: Update, context: ContextTypes.DEF
     # Получаем новую дату
     new_date = update.message.text.strip()
     
-    if not new_date:
+    # Проверяем валидность даты
+    is_valid, error_message = validate_date_format(new_date)
+    if not is_valid:
         keyboard = [[InlineKeyboardButton(BUTTON_BACK, callback_data=f"back_{user_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("❌ Дата не может быть пустой. Попробуйте еще раз.", reply_markup=reply_markup)
+        await update.message.reply_text(MSG_DATE_INVALID.format(error_message), reply_markup=reply_markup)
         return
     
     # Убираем состояние ожидания

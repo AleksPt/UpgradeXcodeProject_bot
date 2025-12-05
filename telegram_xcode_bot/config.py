@@ -83,6 +83,11 @@ MSG_BUNDLE_ID_INVALID: Final[str] = (
     "Попробуй еще раз."
 )
 
+MSG_DATE_INVALID: Final[str] = (
+    "❌ {}\n\n"
+    "Попробуй еще раз."
+)
+
 MSG_WRONG_USER: Final[str] = "❌ Ты не можешь обработать чужой архив."
 
 MSG_FILE_NOT_FOUND: Final[str] = "❌ Файл не найден. Пожалуйста, отправь архив заново."
