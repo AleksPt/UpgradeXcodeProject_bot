@@ -409,6 +409,14 @@ async def project_info_callback(update: Update, context: ContextTypes.DEFAULT_TY
         # Читаем информацию из первого найденного файла
         info = read_project_info(str(project_files[0]))
         
+        # Проверяем поддержку iPad
+        device_family = read_device_family(str(project_files[0]))
+        ipad_support = "неизвестно"
+        if device_family == "Universal" or device_family == "iPad":
+            ipad_support = "поддерживается"
+        elif device_family == "iPhone":
+            ipad_support = "не поддерживается"
+        
         # Формируем сообщение с информацией
         info_message = (
             "ℹ️ Информация о проекте:\n\n"
@@ -416,7 +424,8 @@ async def project_info_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"Билд: {info.build_version or 'неизвестно'}\n"
             f"Название: {info.display_name or 'неизвестно'}\n"
             f"Bundle ID: {info.bundle_id or 'неизвестно'}\n"
-            f"Дата активации: {info.activation_date or 'не обнаружена'}"
+            f"Дата активации: {info.activation_date or 'не обнаружена'}\n"
+            f"iPad: {ipad_support}"
         )
         
         # Создаем кнопку "Назад"
