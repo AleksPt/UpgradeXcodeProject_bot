@@ -308,3 +308,73 @@ def update_activation_date(project_dir: str, new_date: str) -> bool:
         logger.error(f"Ошибка при обновлении даты активации: {e}", exc_info=True)
         return False
 
+
+def read_device_family(project_path: str) -> Optional[str]:
+    """
+    Читает текущее значение TARGETED_DEVICE_FAMILY.
+    
+    Args:
+        project_path: Путь к файлу project.pbxproj
+    
+    Returns:
+        "iPhone" | "iPad" | "Universal" | None
+    """
+    try:
+        with open(project_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        match = re.search(r'TARGETED_DEVICE_FAMILY\s*=\s*([^;]+);', content)
+        if match:
+            value = match.group(1).strip().strip('"')
+            if value == "1":
+                return "iPhone"
+            elif value == "2":
+                return "iPad"
+            elif "1,2" in value or "2,1" in value:
+                return "Universal"
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка при чтении TARGETED_DEVICE_FAMILY: {e}")
+        return None
+
+
+def add_ipad_support(project_path: str) -> bool:
+    """
+    Добавляет iPad в supported destinations.
+    Изменяет TARGETED_DEVICE_FAMILY на "1,2" (Universal).
+    
+    Args:
+        project_path: Путь к файлу project.pbxproj
+    
+    Returns:
+        True если успешно обновлено
+    """
+    try:
+        with open(project_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        original_content = content
+        
+        # Паттерн для TARGETED_DEVICE_FAMILY
+        device_family_pattern = r'(TARGETED_DEVICE_FAMILY\s*=\s*)([^;]+)(;)'
+        
+        def replace_device_family(match):
+            current_value = match.group(2).strip().strip('"')
+            # Если уже есть iPad (2 или 1,2), ничего не меняем
+            if '2' in current_value:
+                return match.group(0)
+            # Добавляем iPad: 1 -> "1,2"
+            return f'{match.group(1)}"1,2"{match.group(3)}'
+        
+        content = re.sub(device_family_pattern, replace_device_family, content)
+        
+        if content != original_content:
+            with open(project_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info(f"Добавлена поддержка iPad в файле: {project_path}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении поддержки iPad в {project_path}: {e}")
+        return False
+

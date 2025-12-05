@@ -18,6 +18,7 @@ from telegram_xcode_bot.config import (
     MSG_WAITING_ICON,
     MSG_WAITING_DATE,
     MSG_DATE_NOT_FOUND,
+    MSG_IPAD_ALREADY_SUPPORTED,
     MSG_ERROR_PREFIX,
     MSG_ERROR_SUFFIX,
     BUTTON_BACK,
@@ -26,7 +27,7 @@ from telegram_xcode_bot.config import (
 )
 from telegram_xcode_bot.logger import get_logger
 from telegram_xcode_bot.services.archive_service import process_archive_with_actions
-from telegram_xcode_bot.services.xcode_service import read_project_info, find_activation_date_in_project
+from telegram_xcode_bot.services.xcode_service import read_project_info, find_activation_date_in_project, read_device_family
 from telegram_xcode_bot.handlers.helpers import show_actions_menu
 
 logger = get_logger(__name__)
@@ -278,12 +279,13 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         'new_name': context.user_data.get(f'action_new_name_{user_id}'),
         'new_bundle_id': context.user_data.get(f'action_new_bundle_id_{user_id}'),
         'new_icon_path': context.user_data.get(f'action_new_icon_{user_id}'),
-        'new_activation_date': context.user_data.get(f'action_new_activation_date_{user_id}')
+        'new_activation_date': context.user_data.get(f'action_new_activation_date_{user_id}'),
+        'add_ipad': context.user_data.get(f'action_add_ipad_{user_id}', False)
     }
     
     # Проверяем, есть ли хоть какие-то действия
     if not any([actions['increment_version'], actions['new_name'], actions['new_bundle_id'], 
-                actions['new_icon_path'], actions['new_activation_date']]):
+                actions['new_icon_path'], actions['new_activation_date'], actions['add_ipad']]):
         await query.answer("Не выбрано ни одного действия!", show_alert=True)
         return
     
@@ -335,6 +337,7 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data.pop(f'action_new_name_{user_id}', None)
             context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
             context.user_data.pop(f'action_new_activation_date_{user_id}', None)
+            context.user_data.pop(f'action_add_ipad_{user_id}', None)
             # Удаляем временный файл иконки
             icon_path = context.user_data.pop(f'action_new_icon_{user_id}', None)
             if icon_path and os.path.exists(icon_path):
@@ -485,11 +488,62 @@ async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop(f'action_new_name_{user_id}', None)
     context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
     context.user_data.pop(f'action_new_activation_date_{user_id}', None)
+    context.user_data.pop(f'action_add_ipad_{user_id}', None)
     # Удаляем временный файл иконки если есть
     icon_path = context.user_data.pop(f'action_new_icon_{user_id}', None)
     if icon_path and os.path.exists(icon_path):
         os.unlink(icon_path)
     
     # Показываем меню заново
+    await show_actions_menu(query, context, user_id, is_query=True)
+
+
+async def add_ipad_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик нажатия на кнопку 'Добавить поддержку iPad'.
+    
+    Args:
+        update: Telegram Update объект
+        context: Контекст обработчика
+    """
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer()
+    
+    # Извлекаем user_id из callback_data
+    user_id = int(query.data.split('_')[2])
+    
+    # Проверяем, что это запрос от того же пользователя
+    if query.from_user.id != user_id:
+        await query.edit_message_text(MSG_WRONG_USER)
+        return
+    
+    # Проверяем наличие файла в user_data
+    archive_path = context.user_data.get(f'archive_{user_id}')
+    if not archive_path or not os.path.exists(archive_path):
+        await query.edit_message_text(MSG_FILE_NOT_FOUND)
+        return
+    
+    # Проверяем текущее состояние поддержки устройств
+    temp_dir = tempfile.mkdtemp()
+    try:
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        project_files = list(Path(temp_dir).rglob('project.pbxproj'))
+        if project_files:
+            device_family = read_device_family(str(project_files[0]))
+            if device_family == "Universal" or device_family == "iPad":
+                await query.answer(MSG_IPAD_ALREADY_SUPPORTED, show_alert=True)
+                return
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    # Добавляем действие в список
+    context.user_data[f'action_add_ipad_{user_id}'] = True
+    
+    # Показываем обновленное меню
     await show_actions_menu(query, context, user_id, is_query=True)
 

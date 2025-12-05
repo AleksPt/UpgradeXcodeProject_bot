@@ -10,6 +10,7 @@ from telegram_xcode_bot.config import (
     BUTTON_CHANGE_BUNDLE_ID,
     BUTTON_CHANGE_ICON,
     BUTTON_CHANGE_DATE,
+    BUTTON_ADD_IPAD,
     BUTTON_PROJECT_INFO,
     BUTTON_GET_ARCHIVE,
     BUTTON_RESET,
@@ -18,6 +19,7 @@ from telegram_xcode_bot.config import (
     MSG_BUNDLE_ID_WILL_CHANGE,
     MSG_ICON_WILL_CHANGE,
     MSG_DATE_WILL_CHANGE,
+    MSG_IPAD_WILL_ADD,
 )
 
 
@@ -53,6 +55,9 @@ def get_pending_actions_summary(user_data: Dict[str, Any], user_id: int) -> str:
     if new_activation_date:
         actions.append(MSG_DATE_WILL_CHANGE.format(new_activation_date))
     
+    if user_data.get(f'action_add_ipad_{user_id}'):
+        actions.append(MSG_IPAD_WILL_ADD)
+    
     if not actions:
         return "Нет запланированных действий."
     
@@ -76,6 +81,7 @@ def create_actions_keyboard(user_data: Dict[str, Any], user_id: int) -> InlineKe
         [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_DATE, callback_data=f"change_date_{user_id}")],
+        [InlineKeyboardButton(BUTTON_ADD_IPAD, callback_data=f"add_ipad_{user_id}")],
         [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
     ]
     
@@ -84,7 +90,8 @@ def create_actions_keyboard(user_data: Dict[str, Any], user_id: int) -> InlineKe
         user_data.get(f'action_new_name_{user_id}') or 
         user_data.get(f'action_new_bundle_id_{user_id}') or
         user_data.get(f'action_new_icon_{user_id}') or
-        user_data.get(f'action_new_activation_date_{user_id}')):
+        user_data.get(f'action_new_activation_date_{user_id}') or
+        user_data.get(f'action_add_ipad_{user_id}')):
         keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
         keyboard.append([InlineKeyboardButton(BUTTON_RESET, callback_data=f"reset_{user_id}")])
     

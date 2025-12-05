@@ -17,9 +17,10 @@ from telegram_xcode_bot.services.xcode_service import (
     update_bundle_id,
     read_project_info,
     ProjectInfo,
+    update_activation_date,
+    add_ipad_support,
 )
 from telegram_xcode_bot.services.icon_service import replace_app_icon
-from telegram_xcode_bot.services.xcode_service import update_activation_date
 
 logger = get_logger(__name__)
 
@@ -93,6 +94,7 @@ def process_archive_with_actions(
             - new_bundle_id: str | None
             - new_icon_path: str | None
             - new_activation_date: str | None
+            - add_ipad: bool
     
     Returns:
         ArchiveProcessResult с результатом обработки
@@ -128,6 +130,10 @@ def process_archive_with_actions(
             # Меняем Bundle ID если указан
             if actions.get('new_bundle_id'):
                 update_bundle_id(project_path, actions['new_bundle_id'])
+            
+            # Добавляем поддержку iPad если указано
+            if actions.get('add_ipad'):
+                add_ipad_support(project_path)
         
         # Меняем иконку если указана
         if actions.get('new_icon_path'):

@@ -15,6 +15,7 @@ from telegram_xcode_bot.handlers import (
     change_bundle_id_callback,
     change_icon_callback,
     change_date_callback,
+    add_ipad_callback,
     get_archive_callback,
     project_info_callback,
     back_callback,
@@ -53,6 +54,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(change_bundle_id_callback, pattern="^change_bundle_id_"))
     application.add_handler(CallbackQueryHandler(change_icon_callback, pattern="^change_icon_"))
     application.add_handler(CallbackQueryHandler(change_date_callback, pattern="^change_date_"))
+    application.add_handler(CallbackQueryHandler(add_ipad_callback, pattern="^add_ipad_"))
     application.add_handler(CallbackQueryHandler(project_info_callback, pattern="^project_info_"))
     application.add_handler(CallbackQueryHandler(get_archive_callback, pattern="^get_archive_"))
     application.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))

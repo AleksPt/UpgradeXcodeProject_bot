@@ -75,6 +75,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context.user_data.pop(f'action_new_bundle_id_{user_id}', None)
         context.user_data.pop(f'action_new_icon_{user_id}', None)
         context.user_data.pop(f'action_new_activation_date_{user_id}', None)
+        context.user_data.pop(f'action_add_ipad_{user_id}', None)
         context.user_data.pop(f'waiting_name_{user_id}', None)
         context.user_data.pop(f'waiting_bundle_id_{user_id}', None)
         context.user_data.pop(f'waiting_icon_{user_id}', None)

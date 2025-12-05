@@ -8,6 +8,8 @@ from telegram_xcode_bot.services.xcode_service import (
     update_bundle_id,
     find_activation_date_in_project,
     update_activation_date,
+    read_device_family,
+    add_ipad_support,
 )
 from telegram_xcode_bot.services.archive_service import (
     process_archive_with_actions,
@@ -23,6 +25,8 @@ __all__ = [
     "update_bundle_id",
     "find_activation_date_in_project",
     "update_activation_date",
+    "read_device_family",
+    "add_ipad_support",
     "process_archive_with_actions",
     "process_archive",
     "replace_app_icon",
