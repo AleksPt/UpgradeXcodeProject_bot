@@ -4,6 +4,7 @@ import os
 import tempfile
 import shutil
 import zipfile
+import asyncio
 from pathlib import Path
 from PIL import Image
 
@@ -13,15 +14,21 @@ from telegram.ext import ContextTypes
 from telegram_xcode_bot.config import (
     MSG_WRONG_FILE_FORMAT,
     MSG_ICON_INVALID_FORMAT,
+    MSG_ARCHIVE_TOO_LARGE,
+    MSG_RATE_LIMIT_EXCEEDED,
     LOG_FILE_UPLOADED,
     LOG_ARCHIVE_ERROR,
     MSG_ERROR_PREFIX,
     MSG_ERROR_SUFFIX,
+    MAX_ARCHIVE_SIZE_BYTES,
+    MAX_ARCHIVE_SIZE_MB,
+    DOWNLOAD_TIMEOUT_SECONDS,
 )
 from telegram_xcode_bot.logger import get_logger
 from telegram_xcode_bot.services.xcode_service import read_project_info
 from telegram_xcode_bot.services.icon_service import convert_png_to_jpeg
 from telegram_xcode_bot.utils.validators import validate_icon_format, validate_icon_size
+from telegram_xcode_bot.utils.rate_limiter import rate_limiter
 from telegram_xcode_bot.handlers.helpers import create_actions_keyboard
 
 logger = get_logger(__name__)
@@ -46,16 +53,40 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await handle_photo_or_document(update, context)
         return
     
+    # Проверяем rate limit
+    if not rate_limiter.is_allowed(user_id):
+        await update.message.reply_text(MSG_RATE_LIMIT_EXCEEDED)
+        return
+    
     # Проверяем, что это архив
     if not document.file_name or not document.file_name.lower().endswith(('.zip', '.zipx')):
         await update.message.reply_text(MSG_WRONG_FILE_FORMAT)
         return
     
+    # Проверяем размер архива
+    if document.file_size and document.file_size > MAX_ARCHIVE_SIZE_BYTES:
+        size_mb = document.file_size / (1024 * 1024)
+        await update.message.reply_text(
+            MSG_ARCHIVE_TOO_LARGE.format(MAX_ARCHIVE_SIZE_MB, size_mb)
+        )
+        return
+    
     try:
-        # Скачиваем файл во временное хранилище
+        # Скачиваем файл во временное хранилище с тайм-аутом
         file = await context.bot.get_file(document.file_id)
         temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
-        await file.download_to_drive(temp_input.name)
+        
+        try:
+            await asyncio.wait_for(
+                file.download_to_drive(temp_input.name),
+                timeout=DOWNLOAD_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            os.unlink(temp_input.name)
+            await update.message.reply_text(
+                "❌ Превышено время ожидания загрузки файла. Попробуйте еще раз."
+            )
+            return
         
         # Удаляем предыдущий архив если он есть
         old_archive = context.user_data.get(f'archive_{user_id}')
@@ -212,9 +243,21 @@ async def handle_photo_or_document(update: Update, context: ContextTypes.DEFAULT
         else:
             return
         
-        # Скачиваем файл
+        # Скачиваем файл с тайм-аутом
         temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-        await file.download_to_drive(temp_image.name)
+        
+        try:
+            await asyncio.wait_for(
+                file.download_to_drive(temp_image.name),
+                timeout=DOWNLOAD_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            os.unlink(temp_image.name)
+            await update.message.reply_text(
+                "❌ Превышено время ожидания загрузки изображения. Попробуйте еще раз."
+            )
+            return
+        
         logger.info(f"Файл скачан: {file_name}")
         
         # Проверяем изображение

@@ -37,7 +37,7 @@ class ArchiveProcessResult:
 
 def extract_archive(archive_path: str, extract_dir: str) -> None:
     """
-    Распаковывает архив в указанную директорию.
+    Распаковывает архив в указанную директорию с защитой от path traversal атак.
     
     Args:
         archive_path: Путь к архиву
@@ -48,8 +48,25 @@ def extract_archive(archive_path: str, extract_dir: str) -> None:
     """
     try:
         with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            # Проверяем на path traversal атаки
+            extract_dir_abs = os.path.abspath(extract_dir)
+            for member in zip_ref.namelist():
+                member_path = os.path.normpath(os.path.join(extract_dir, member))
+                member_path_abs = os.path.abspath(member_path)
+                if not member_path_abs.startswith(extract_dir_abs):
+                    raise ArchiveProcessingError(
+                        f"Обнаружен потенциально опасный путь в архиве: {member}"
+                    )
+            
+            # Если все проверки прошли, распаковываем
             zip_ref.extractall(extract_dir)
         logger.info(f"Архив распакован в {extract_dir}")
+    except zipfile.BadZipFile:
+        logger.error("Поврежденный zip архив")
+        raise ArchiveProcessingError("Поврежденный zip архив")
+    except ArchiveProcessingError:
+        # Пробрасываем дальше
+        raise
     except Exception as e:
         logger.error(f"Ошибка при распаковке архива: {e}")
         raise ArchiveProcessingError(f"Не удалось распаковать архив: {str(e)}")

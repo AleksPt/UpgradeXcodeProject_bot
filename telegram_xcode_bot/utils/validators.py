@@ -1,7 +1,10 @@
 """Функции валидации данных."""
 
 import re
+from datetime import datetime
 from typing import Tuple, Optional
+
+from telegram_xcode_bot.config import ICON_REQUIRED_SIZE
 
 
 def validate_bundle_id(bundle_id: str) -> bool:
@@ -57,20 +60,20 @@ def validate_icon_size(width: int, height: int) -> Tuple[bool, Optional[str]]:
     Returns:
         Tuple (валидность, сообщение об ошибке)
     """
-    required_size = 1024
-    if width == required_size and height == required_size:
+    if width == ICON_REQUIRED_SIZE and height == ICON_REQUIRED_SIZE:
         return True, None
-    return False, f"Текущий размер: {width}x{height}, требуемый: {required_size}x{required_size}"
+    return False, f"Текущий размер: {width}x{height}, требуемый: {ICON_REQUIRED_SIZE}x{ICON_REQUIRED_SIZE}"
 
 
 def validate_date_format(date_str: str) -> Tuple[bool, Optional[str]]:
     """
-    Проверяет формат даты (год/месяц/день).
+    Проверяет формат даты (год/месяц/день) и что дата реально существует.
     
     Правила:
     - Формат: YYYY/MM/DD (строго 4 цифры, слэш, 2 цифры, слэш, 2 цифры)
     - Месяц: 01-12 (строго две цифры)
     - День: 01-31 (строго две цифры)
+    - Дата должна быть валидной (например, 2025/02/30 невалидна)
     
     Args:
         date_str: Строка с датой
@@ -83,10 +86,8 @@ def validate_date_format(date_str: str) -> Tuple[bool, Optional[str]]:
         (True, None)
         >>> validate_date_format("2025/5/4")
         (False, "Неверный формат. Используйте: ГГГГ/ММ/ДД (например, 2025/05/04)")
-        >>> validate_date_format("2025/13/01")
-        (False, "Месяц должен быть от 01 до 12")
-        >>> validate_date_format("2025/12/32")
-        (False, "День должен быть от 01 до 31")
+        >>> validate_date_format("2025/02/30")
+        (False, "Несуществующая дата (например, 30 февраля)")
     """
     if not date_str:
         return False, "Дата не может быть пустой"
@@ -96,19 +97,10 @@ def validate_date_format(date_str: str) -> Tuple[bool, Optional[str]]:
     if not re.match(pattern, date_str):
         return False, "Неверный формат. Используйте: ГГГГ/ММ/ДД (например, 2025/12/31)"
     
-    # Разбираем дату на компоненты
-    parts = date_str.split('/')
-    year = int(parts[0])
-    month = int(parts[1])
-    day = int(parts[2])
-    
-    # Проверяем диапазон месяца (01-12)
-    if month < 1 or month > 12:
-        return False, "Месяц должен быть от 01 до 12"
-    
-    # Проверяем диапазон дня (01-31)
-    if day < 1 or day > 31:
-        return False, "День должен быть от 01 до 31"
-    
-    return True, None
+    # Проверяем, что дата реально существует
+    try:
+        datetime.strptime(date_str, "%Y/%m/%d")
+        return True, None
+    except ValueError:
+        return False, "Несуществующая дата (например, 30 февраля)"
 

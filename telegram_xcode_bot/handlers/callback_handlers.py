@@ -19,6 +19,7 @@ from telegram_xcode_bot.config import (
     MSG_WAITING_DATE,
     MSG_DATE_NOT_FOUND,
     MSG_IPAD_ALREADY_SUPPORTED,
+    MSG_RATE_LIMIT_EXCEEDED,
     MSG_ERROR_PREFIX,
     MSG_ERROR_SUFFIX,
     BUTTON_BACK,
@@ -28,6 +29,8 @@ from telegram_xcode_bot.config import (
 from telegram_xcode_bot.logger import get_logger
 from telegram_xcode_bot.services.archive_service import process_archive_with_actions
 from telegram_xcode_bot.services.xcode_service import read_project_info, find_activation_date_in_project, read_device_family
+from telegram_xcode_bot.utils.rate_limiter import rate_limiter
+from telegram_xcode_bot.utils.async_helpers import run_blocking_io
 from telegram_xcode_bot.handlers.helpers import show_actions_menu
 
 logger = get_logger(__name__)
@@ -267,6 +270,11 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(MSG_WRONG_USER)
         return
     
+    # Проверяем rate limit для обработки архива
+    if not rate_limiter.is_allowed(user_id):
+        await query.answer(MSG_RATE_LIMIT_EXCEEDED, show_alert=True)
+        return
+    
     # Проверяем наличие файла в user_data
     archive_path = context.user_data.get(f'archive_{user_id}')
     if not archive_path or not os.path.exists(archive_path):
@@ -296,8 +304,21 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         temp_output = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
         
         try:
-            # Обрабатываем архив со всеми действиями
-            result = process_archive_with_actions(archive_path, temp_output.name, actions)
+            # Обрабатываем архив со всеми действиями с тайм-аутом
+            try:
+                result = await run_blocking_io(
+                    process_archive_with_actions,
+                    archive_path,
+                    temp_output.name,
+                    actions
+                )
+            except TimeoutError as te:
+                if os.path.exists(temp_output.name):
+                    os.unlink(temp_output.name)
+                await query.edit_message_text(
+                    f"❌ {str(te)}\n\nАрхив слишком большой или операция занимает слишком много времени."
+                )
+                return
             
             if not result.success:
                 raise ValueError(result.error_message or "Не удалось обработать архив")
@@ -326,11 +347,12 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             # Отправляем обратно с фиксированным именем
             output_filename = "source.zip"
             
-            await query.message.reply_document(
-                document=open(temp_output.name, 'rb'),
-                filename=output_filename,
-                caption=success_message
-            )
+            with open(temp_output.name, 'rb') as output_file:
+                await query.message.reply_document(
+                    document=output_file,
+                    filename=output_filename,
+                    caption=success_message
+                )
             logger.info(LOG_FILE_SENT.format(output_filename))
             
             # Удаляем временные файлы

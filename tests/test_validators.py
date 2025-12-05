@@ -77,15 +77,58 @@ class TestValidateDateFormat:
     
     def test_valid_dates(self):
         """Тест валидных форматов дат."""
-        assert validate_date_format("2026/01/31") is True
-        assert validate_date_format("2025/12/25") is True
-        assert validate_date_format("2024/06/15") is True
+        valid, error = validate_date_format("2026/01/31")
+        assert valid is True
+        assert error is None
+        
+        valid, error = validate_date_format("2025/12/25")
+        assert valid is True
+        assert error is None
+        
+        valid, error = validate_date_format("2024/06/15")
+        assert valid is True
+        assert error is None
     
-    def test_invalid_dates(self):
-        """Тест невалидных форматов дат."""
-        assert validate_date_format("") is False
-        assert validate_date_format("2026-01-31") is False  # Неправильный разделитель
-        assert validate_date_format("31/01/2026") is False  # Неправильный порядок
-        assert validate_date_format("2026/1/31") is False  # Неполный формат
-        assert validate_date_format("26/01/31") is False  # Неполный год
+    def test_invalid_format(self):
+        """Тест невалидных форматов."""
+        valid, error = validate_date_format("")
+        assert valid is False
+        assert "пуст" in error.lower()
+        
+        valid, error = validate_date_format("2026-01-31")
+        assert valid is False
+        assert "формат" in error.lower()
+        
+        valid, error = validate_date_format("31/01/2026")
+        assert valid is False
+        
+        valid, error = validate_date_format("2026/1/31")
+        assert valid is False
+        
+        valid, error = validate_date_format("26/01/31")
+        assert valid is False
+    
+    def test_nonexistent_dates(self):
+        """Тест несуществующих дат."""
+        # 30 февраля не существует
+        valid, error = validate_date_format("2025/02/30")
+        assert valid is False
+        assert "несуществующая" in error.lower()
+        
+        # 31 апреля не существует
+        valid, error = validate_date_format("2025/04/31")
+        assert valid is False
+        assert "несуществующая" in error.lower()
+        
+        # 29 февраля в невисокосном году
+        valid, error = validate_date_format("2025/02/29")
+        assert valid is False
+        assert "несуществующая" in error.lower()
+    
+    def test_leap_year(self):
+        """Тест високосного года."""
+        # 29 февраля в високосном году должно быть валидно
+        valid, error = validate_date_format("2024/02/29")
+        assert valid is True
+        assert error is None
 

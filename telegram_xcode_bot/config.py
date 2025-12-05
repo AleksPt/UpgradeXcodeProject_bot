@@ -10,6 +10,23 @@ from typing import Final, Optional
 BOT_TOKEN: Optional[str] = os.getenv("BOT_TOKEN")
 
 # ============================================================================
+# КОНСТАНТЫ - НАСТРОЙКИ ПРИЛОЖЕНИЯ
+# ============================================================================
+
+# Размеры и лимиты
+MAX_ARCHIVE_SIZE_MB: Final[int] = 100  # Максимальный размер архива в МБ
+MAX_ARCHIVE_SIZE_BYTES: Final[int] = MAX_ARCHIVE_SIZE_MB * 1024 * 1024
+ICON_REQUIRED_SIZE: Final[int] = 1024  # Требуемый размер иконки в пикселях
+
+# Тайм-ауты
+DOWNLOAD_TIMEOUT_SECONDS: Final[int] = 300  # 5 минут
+PROCESS_TIMEOUT_SECONDS: Final[int] = 600   # 10 минут
+
+# Rate limiting
+RATE_LIMIT_MAX_REQUESTS: Final[int] = 5  # Максимум запросов
+RATE_LIMIT_WINDOW_SECONDS: Final[int] = 60  # За период в секундах
+
+# ============================================================================
 # КОНСТАНТЫ - ТЕКСТОВЫЕ СООБЩЕНИЯ
 # ============================================================================
 
@@ -20,6 +37,10 @@ MSG_START_GREETING: Final[str] = (
 )
 
 MSG_WRONG_FILE_FORMAT: Final[str] = "❌ Пожалуйста, отправь zip архив с проектом Xcode."
+
+MSG_ARCHIVE_TOO_LARGE: Final[str] = "❌ Архив слишком большой!\n\nМаксимальный размер: {} МБ\nРазмер вашего архива: {:.1f} МБ"
+
+MSG_RATE_LIMIT_EXCEEDED: Final[str] = "⚠️ Слишком много запросов!\n\nПодожди немного и попробуй снова."
 
 MSG_PROCESSING: Final[str] = "⏳ Обрабатываю архив..."
 
