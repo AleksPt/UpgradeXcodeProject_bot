@@ -1,2 +1,2 @@
-worker: python telegram_xcode_bot.py
+worker: python main.py
 
