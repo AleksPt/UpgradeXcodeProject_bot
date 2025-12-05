@@ -19,6 +19,7 @@ from telegram_xcode_bot.services.xcode_service import (
     ProjectInfo,
     update_activation_date,
     add_ipad_support,
+    read_device_family,
 )
 from telegram_xcode_bot.services.icon_service import replace_app_icon
 
@@ -30,6 +31,7 @@ class ArchiveProcessResult:
     """Результат обработки архива."""
     success: bool
     project_info: ProjectInfo
+    device_family: Optional[str] = None
     error_message: Optional[str] = None
 
 
@@ -144,14 +146,16 @@ def process_archive_with_actions(
             update_activation_date(temp_dir, actions['new_activation_date'])
         
         # Читаем финальную информацию из обработанного файла
+        device_family = None
         if project_files:
             project_info = read_project_info(str(project_files[0]))
+            device_family = read_device_family(str(project_files[0]))
         
         # Создаем новый архив
         create_archive(temp_dir, output_path)
         
         logger.info(f"Обработан архив с действиями: {actions}")
-        return ArchiveProcessResult(success=True, project_info=project_info)
+        return ArchiveProcessResult(success=True, project_info=project_info, device_family=device_family)
         
     except Exception as e:
         logger.error(f"Ошибка при обработке архива: {e}", exc_info=True)

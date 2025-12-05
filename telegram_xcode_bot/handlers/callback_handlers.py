@@ -304,6 +304,14 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             
             info = result.project_info
             
+            # Определяем статус поддержки iPad
+            ipad_status = "неизвестно"
+            if result.device_family:
+                if result.device_family == "Universal" or result.device_family == "iPad":
+                    ipad_status = "поддерживается"
+                elif result.device_family == "iPhone":
+                    ipad_status = "не поддерживается"
+            
             # Формируем сообщение с результатами
             success_message = (
                 "✅ Архив обновлен!\n\n"
@@ -311,7 +319,8 @@ async def get_archive_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"Билд: {info.build_version or 'неизвестно'}\n"
                 f"Название: {info.display_name or 'неизвестно'}\n"
                 f"Bundle ID: {info.bundle_id or 'неизвестно'}\n"
-                f"Дата активации: {info.activation_date or 'не обнаружена'}"
+                f"Дата активации: {info.activation_date or 'не обнаружена'}\n"
+                f"iPad: {ipad_status}"
             )
             
             # Отправляем обратно с фиксированным именем

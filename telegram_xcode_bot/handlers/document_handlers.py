@@ -101,6 +101,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             display_name = "неизвестно"
             bundle_id = "неизвестно"
             activation_date = "не обнаружена"
+            ipad_support = "неизвестно"
             
             if project_files:
                 # Читаем всю информацию из первого найденного файла
@@ -115,6 +116,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     bundle_id = info.bundle_id
                 if info.activation_date:
                     activation_date = info.activation_date
+                
+                # Проверяем поддержку iPad
+                from telegram_xcode_bot.services.xcode_service import read_device_family
+                device_family = read_device_family(str(project_files[0]))
+                if device_family == "Universal" or device_family == "iPad":
+                    ipad_support = "поддерживается"
+                elif device_family == "iPhone":
+                    ipad_support = "не поддерживается"
         finally:
             # Удаляем временную директорию
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -129,7 +138,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"Билд: {build_version}\n"
             f"Название: {display_name}\n"
             f"Bundle ID: {bundle_id}\n"
-            f"Дата активации: {activation_date}\n\n"
+            f"Дата активации: {activation_date}\n"
+            f"iPad: {ipad_support}\n\n"
             "Выбери действия:"
         )
         
