@@ -554,7 +554,10 @@ async def add_ipad_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if project_files:
             device_family = read_device_family(str(project_files[0]))
             if device_family == "Universal" or device_family == "iPad":
+                # Показываем alert и остаемся в меню
                 await query.answer(MSG_IPAD_ALREADY_SUPPORTED, show_alert=True)
+                # Показываем меню без изменений
+                await show_actions_menu(query, context, user_id, is_query=True)
                 return
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
