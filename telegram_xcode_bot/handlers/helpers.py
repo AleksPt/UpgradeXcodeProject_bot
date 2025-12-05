@@ -78,10 +78,10 @@ def create_actions_keyboard(user_data: Dict[str, Any], user_id: int) -> InlineKe
     keyboard = [
         [InlineKeyboardButton(BUTTON_INCREMENT_VERSION, callback_data=f"increment_version_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_NAME, callback_data=f"change_name_{user_id}")],
-        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_ICON, callback_data=f"change_icon_{user_id}")],
         [InlineKeyboardButton(BUTTON_CHANGE_DATE, callback_data=f"change_date_{user_id}")],
         [InlineKeyboardButton(BUTTON_ADD_IPAD, callback_data=f"add_ipad_{user_id}")],
+        [InlineKeyboardButton(BUTTON_CHANGE_BUNDLE_ID, callback_data=f"change_bundle_id_{user_id}")],
         [InlineKeyboardButton(BUTTON_PROJECT_INFO, callback_data=f"project_info_{user_id}")]
     ]
     
@@ -92,8 +92,8 @@ def create_actions_keyboard(user_data: Dict[str, Any], user_id: int) -> InlineKe
         user_data.get(f'action_new_icon_{user_id}') or
         user_data.get(f'action_new_activation_date_{user_id}') or
         user_data.get(f'action_add_ipad_{user_id}')):
-        keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
         keyboard.append([InlineKeyboardButton(BUTTON_RESET, callback_data=f"reset_{user_id}")])
+        keyboard.append([InlineKeyboardButton(BUTTON_GET_ARCHIVE, callback_data=f"get_archive_{user_id}")])
     
     return InlineKeyboardMarkup(keyboard)
 

@@ -97,7 +97,7 @@ BUTTON_ADD_IPAD: Final[str] = "📱 Добавить поддержку iPad"
 BUTTON_PROJECT_INFO: Final[str] = "ℹ️ Информация о проекте"
 BUTTON_GET_ARCHIVE: Final[str] = "📥 ПОЛУЧИТЬ ОБНОВЛЁННЫЙ АРХИВ"
 BUTTON_BACK: Final[str] = "⬅️ Назад"
-BUTTON_RESET: Final[str] = "🔄 Начать заново"
+BUTTON_RESET: Final[str] = "🔄 Сбросить все изменения"
 
 MSG_ERROR_PREFIX: Final[str] = "❌ Произошла ошибка при обработке архива:\n"
 MSG_ERROR_SUFFIX: Final[str] = (
