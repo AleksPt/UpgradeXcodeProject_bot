@@ -85,9 +85,9 @@ class TestUpdatePlistUsageDescriptions:
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>The OldApp application requests access to your Camera for adding a photo</string>
+    <string>The application requests access to your Camera for adding a photo</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The OldApp application requests access to your Photo Library for adding an image</string>
+    <string>The application requests access to your Photo Library for adding an image</string>
 </dict>
 </plist>"""
         
@@ -106,20 +106,19 @@ class TestUpdatePlistUsageDescriptions:
             
             assert "The BestGame application requests access to your Camera for adding a photo" in updated_content
             assert "The BestGame application requests access to your Photo Library for adding an image" in updated_content
-            assert "The OldApp application" not in updated_content
         finally:
             os.unlink(temp_path)
     
-    def test_update_with_multiline_format(self):
-        """Тест обновления с многострочным форматом."""
+    def test_update_with_any_existing_text(self):
+        """Тест обновления независимо от существующего текста."""
         plist_content = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>The TestApp application requests access to your Camera for adding a photo</string>
+    <string>Some random text about camera</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The TestApp application requests access to your Photo Library for adding an image</string>
+    <string>Any text here</string>
 </dict>
 </plist>"""
         
@@ -136,6 +135,8 @@ class TestUpdatePlistUsageDescriptions:
             
             assert "The MyNewApp application requests access to your Camera for adding a photo" in updated_content
             assert "The MyNewApp application requests access to your Photo Library for adding an image" in updated_content
+            assert "Some random text about camera" not in updated_content
+            assert "Any text here" not in updated_content
         finally:
             os.unlink(temp_path)
     
@@ -167,9 +168,9 @@ class TestUpdatePlistUsageDescriptions:
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>The OldApp application requests access to your Camera for adding a photo</string>
+    <string>The application requests access to your Camera for adding a photo</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The OldApp application requests access to your Photo Library for adding an image</string>
+    <string>The application requests access to your Photo Library for adding an image</string>
 </dict>
 </plist>"""
         

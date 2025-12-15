@@ -54,9 +54,9 @@ class TestIntegrationUpdateDisplayName:
     <key>CFBundleName</key>
     <string>TestApp</string>
     <key>NSCameraUsageDescription</key>
-    <string>The OldApp application requests access to your Camera for adding a photo</string>
+    <string>The application requests access to your Camera for adding a photo</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The OldApp application requests access to your Photo Library for adding an image</string>
+    <string>The application requests access to your Photo Library for adding an image</string>
 </dict>
 </plist>"""
             plist_path = project_dir / "Info.plist"
@@ -78,7 +78,6 @@ class TestIntegrationUpdateDisplayName:
                 plist_updated = f.read()
             assert "The BestGame application requests access to your Camera for adding a photo" in plist_updated
             assert "The BestGame application requests access to your Photo Library for adding an image" in plist_updated
-            assert "The OldApp application" not in plist_updated
     
     def test_process_archive_with_name_change_action(self):
         """Тест полного процесса обработки архива с изменением названия."""
@@ -107,9 +106,9 @@ class TestIntegrationUpdateDisplayName:
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>The OriginalApp application requests access to your Camera for adding a photo</string>
+    <string>The application requests access to your Camera for adding a photo</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The OriginalApp application requests access to your Photo Library for adding an image</string>
+    <string>The application requests access to your Photo Library for adding an image</string>
 </dict>
 </plist>"""
             plist_path = project_dir / "Info.plist"

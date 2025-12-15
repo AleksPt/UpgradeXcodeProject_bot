@@ -218,22 +218,22 @@ def _update_plist_usage_descriptions(plist_path: str, app_name: str) -> bool:
         
         original_content = content
         
-        # Паттерн для NSCameraUsageDescription
+        # Паттерн для NSCameraUsageDescription - заменяем всю строку
         camera_pattern = (
             r'(<key>NSCameraUsageDescription</key>\s*<string>)'
-            r'The [^<]+ application'
-            r'( requests access to your Camera for adding a photo</string>)'
+            r'[^<]*'
+            r'(</string>)'
         )
-        camera_replacement = rf'\1The {app_name} application\2'
+        camera_replacement = rf'\1The {app_name} application requests access to your Camera for adding a photo\2'
         content = re.sub(camera_pattern, camera_replacement, content)
         
-        # Паттерн для NSPhotoLibraryUsageDescription
+        # Паттерн для NSPhotoLibraryUsageDescription - заменяем всю строку
         photo_pattern = (
             r'(<key>NSPhotoLibraryUsageDescription</key>\s*<string>)'
-            r'The [^<]+ application'
-            r'( requests access to your Photo Library for adding an image</string>)'
+            r'[^<]*'
+            r'(</string>)'
         )
-        photo_replacement = rf'\1The {app_name} application\2'
+        photo_replacement = rf'\1The {app_name} application requests access to your Photo Library for adding an image\2'
         content = re.sub(photo_pattern, photo_replacement, content)
         
         if content != original_content:
