@@ -8,6 +8,9 @@
 - 🆙 Увеличивает `CURRENT_PROJECT_VERSION` на 1 (например, 1 → 2)
 - ✏️ Изменяет название приложения (`INFOPLIST_KEY_CFBundleDisplayName`)
 - 📦 Изменяет Bundle ID приложения (`PRODUCT_BUNDLE_IDENTIFIER`)
+- 📝 Автоматически обновляет описания разрешений в Info.plist при изменении названия приложения:
+  - `NSCameraUsageDescription` - описание доступа к камере
+  - `NSPhotoLibraryUsageDescription` - описание доступа к фотобиблиотеке
 
 ## Развертывание на Railway
 
@@ -127,7 +130,12 @@
 - **INFOPLIST_KEY_CFBundleDisplayName**: изменяется на введенное название (опционально)
 - **PRODUCT_BUNDLE_IDENTIFIER**: изменяется на введенный Bundle ID (опционально)
 
-Пример:
+При изменении названия приложения также обновятся описания разрешений в файлах `Info.plist`:
+
+- **NSCameraUsageDescription**: `The OldApp application requests access to your Camera for adding a photo` → `The NewApp application requests access to your Camera for adding a photo`
+- **NSPhotoLibraryUsageDescription**: `The OldApp application requests access to your Photo Library for adding an image` → `The NewApp application requests access to your Photo Library for adding an image`
+
+Пример изменений в project.pbxproj:
 ```
 До:
 MARKETING_VERSION = 1.0;
@@ -140,6 +148,21 @@ MARKETING_VERSION = 2.0;
 CURRENT_PROJECT_VERSION = 2;
 INFOPLIST_KEY_CFBundleDisplayName = "New Name";
 PRODUCT_BUNDLE_IDENTIFIER = com.newcompany.newapp;
+```
+
+Пример изменений в Info.plist при изменении названия с "OldApp" на "BestGame":
+```xml
+До:
+<key>NSCameraUsageDescription</key>
+<string>The OldApp application requests access to your Camera for adding a photo</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>The OldApp application requests access to your Photo Library for adding an image</string>
+
+После:
+<key>NSCameraUsageDescription</key>
+<string>The BestGame application requests access to your Camera for adding a photo</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>The BestGame application requests access to your Photo Library for adding an image</string>
 ```
 
 ### Преимущества нового подхода
