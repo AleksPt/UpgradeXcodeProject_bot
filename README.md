@@ -8,9 +8,6 @@
 - 🆙 Увеличивает `CURRENT_PROJECT_VERSION` на 1 (например, 1 → 2)
 - ✏️ Изменяет название приложения (`INFOPLIST_KEY_CFBundleDisplayName`)
 - 📦 Изменяет Bundle ID приложения (`PRODUCT_BUNDLE_IDENTIFIER`)
-- 📝 Автоматически обновляет описания разрешений в Info.plist при изменении названия приложения:
-  - `NSCameraUsageDescription` - описание доступа к камере
-  - `NSPhotoLibraryUsageDescription` - описание доступа к фотобиблиотеке
 
 ## Развертывание на Railway
 
@@ -130,11 +127,6 @@
 - **INFOPLIST_KEY_CFBundleDisplayName**: изменяется на введенное название (опционально)
 - **PRODUCT_BUNDLE_IDENTIFIER**: изменяется на введенный Bundle ID (опционально)
 
-При изменении названия приложения автоматически обновляются описания разрешений в файлах `Info.plist`:
-
-- **NSCameraUsageDescription**: всегда устанавливается в `The <новое название> application requests access to your Camera for adding a photo`
-- **NSPhotoLibraryUsageDescription**: всегда устанавливается в `The <новое название> application requests access to your Photo Library for adding an image`
-
 Пример изменений в project.pbxproj:
 ```
 До:
@@ -148,21 +140,6 @@ MARKETING_VERSION = 2.0;
 CURRENT_PROJECT_VERSION = 2;
 INFOPLIST_KEY_CFBundleDisplayName = "New Name";
 PRODUCT_BUNDLE_IDENTIFIER = com.newcompany.newapp;
-```
-
-Пример изменений в Info.plist при изменении названия на "BestGame" (независимо от исходного текста):
-```xml
-До (любой текст):
-<key>NSCameraUsageDescription</key>
-<string>The application requests access to your Camera for adding a photo</string>
-<key>NSPhotoLibraryUsageDescription</key>
-<string>The application requests access to your Photo Library for adding an image</string>
-
-После:
-<key>NSCameraUsageDescription</key>
-<string>The BestGame application requests access to your Camera for adding a photo</string>
-<key>NSPhotoLibraryUsageDescription</key>
-<string>The BestGame application requests access to your Photo Library for adding an image</string>
 ```
 
 ### Преимущества нового подхода

@@ -14,8 +14,8 @@ from telegram_xcode_bot.services.archive_service import process_archive_with_act
 class TestIntegrationUpdateDisplayName:
     """Интеграционные тесты для обновления display name с Info.plist."""
     
-    def test_update_display_name_updates_both_pbxproj_and_plist(self):
-        """Тест, что update_display_name обновляет и project.pbxproj и Info.plist."""
+    def test_update_display_name_updates_pbxproj(self):
+        """Тест, что update_display_name обновляет project.pbxproj."""
         # Создаем временную структуру проекта
         with tempfile.TemporaryDirectory() as temp_dir:
             project_dir = Path(temp_dir) / "TestApp"
@@ -46,23 +46,6 @@ class TestIntegrationUpdateDisplayName:
             with open(pbxproj_path, 'w', encoding='utf-8') as f:
                 f.write(pbxproj_content)
             
-            # Создаем Info.plist
-            plist_content = """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>TestApp</string>
-    <key>NSCameraUsageDescription</key>
-    <string>The application requests access to your Camera for adding a photo</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>The application requests access to your Photo Library for adding an image</string>
-</dict>
-</plist>"""
-            plist_path = project_dir / "Info.plist"
-            with open(plist_path, 'w', encoding='utf-8') as f:
-                f.write(plist_content)
-            
             # Обновляем display name
             result = update_display_name(str(pbxproj_path), "BestGame")
             assert result is True
@@ -72,12 +55,6 @@ class TestIntegrationUpdateDisplayName:
                 pbxproj_updated = f.read()
             assert 'INFOPLIST_KEY_CFBundleDisplayName = "BestGame";' in pbxproj_updated
             assert 'INFOPLIST_KEY_CFBundleDisplayName = "OldApp";' not in pbxproj_updated
-            
-            # Проверяем, что Info.plist обновлен
-            with open(plist_path, 'r', encoding='utf-8') as f:
-                plist_updated = f.read()
-            assert "The BestGame application requests access to your Camera for adding a photo" in plist_updated
-            assert "The BestGame application requests access to your Photo Library for adding an image" in plist_updated
     
     def test_process_archive_with_name_change_action(self):
         """Тест полного процесса обработки архива с изменением названия."""
@@ -106,9 +83,9 @@ class TestIntegrationUpdateDisplayName:
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>The application requests access to your Camera for adding a photo</string>
+    <string>Original camera description</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>The application requests access to your Photo Library for adding an image</string>
+    <string>Original photo library description</string>
 </dict>
 </plist>"""
             plist_path = project_dir / "Info.plist"
@@ -152,10 +129,10 @@ class TestIntegrationUpdateDisplayName:
                 content = f.read()
             assert 'INFOPLIST_KEY_CFBundleDisplayName = "SuperApp";' in content
             
-            # Проверяем Info.plist
+            # Проверяем, что Info.plist НЕ изменился
             output_plist = output_dir / "TestProject" / "Info.plist"
             with open(output_plist, 'r', encoding='utf-8') as f:
                 content = f.read()
-            assert "The SuperApp application requests access to your Camera for adding a photo" in content
-            assert "The SuperApp application requests access to your Photo Library for adding an image" in content
+            assert "Original camera description" in content
+            assert "Original photo library description" in content
 

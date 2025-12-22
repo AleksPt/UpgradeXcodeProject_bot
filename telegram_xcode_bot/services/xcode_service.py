@@ -154,8 +154,7 @@ def update_project_file(project_path: str) -> Tuple[bool, Optional[str], Optiona
 
 def update_display_name(project_path: str, new_name: str) -> bool:
     """
-    Обновляет Display Name в project.pbxproj файле и Info.plist файлах.
-    Также обновляет NSCameraUsageDescription и NSPhotoLibraryUsageDescription.
+    Обновляет Display Name в project.pbxproj файле.
     
     Args:
         project_path: Путь к файлу project.pbxproj
@@ -180,70 +179,15 @@ def update_display_name(project_path: str, new_name: str) -> bool:
         
         content = re.sub(display_name_pattern, replace_display_name, content)
         
-        updated = False
         if content != original_content:
             with open(project_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             logger.info(f"Обновлено название в файле: {project_path}")
-            updated = True
+            return True
         
-        # Обновляем Info.plist файлы
-        project_dir = Path(project_path).parent.parent.parent
-        info_plist_files = list(project_dir.rglob('Info.plist'))
-        
-        for plist_file in info_plist_files:
-            if _update_plist_usage_descriptions(str(plist_file), new_name):
-                updated = True
-        
-        return updated
+        return False
     except Exception as e:
         logger.error(f"Ошибка при обновлении названия в {project_path}: {e}")
-        return False
-
-
-def _update_plist_usage_descriptions(plist_path: str, app_name: str) -> bool:
-    """
-    Обновляет NSCameraUsageDescription и NSPhotoLibraryUsageDescription в Info.plist.
-    
-    Args:
-        plist_path: Путь к файлу Info.plist
-        app_name: Название приложения
-    
-    Returns:
-        True если успешно обновлено
-    """
-    try:
-        with open(plist_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        
-        # Паттерн для NSCameraUsageDescription - заменяем всю строку
-        camera_pattern = (
-            r'(<key>NSCameraUsageDescription</key>\s*<string>)'
-            r'[^<]*'
-            r'(</string>)'
-        )
-        camera_replacement = rf'\1The {app_name} application requests access to your Camera for adding a photo\2'
-        content = re.sub(camera_pattern, camera_replacement, content)
-        
-        # Паттерн для NSPhotoLibraryUsageDescription - заменяем всю строку
-        photo_pattern = (
-            r'(<key>NSPhotoLibraryUsageDescription</key>\s*<string>)'
-            r'[^<]*'
-            r'(</string>)'
-        )
-        photo_replacement = rf'\1The {app_name} application requests access to your Photo Library for adding an image\2'
-        content = re.sub(photo_pattern, photo_replacement, content)
-        
-        if content != original_content:
-            with open(plist_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            logger.info(f"Обновлены описания разрешений в файле: {plist_path}")
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении Info.plist {plist_path}: {e}")
         return False
 
 
